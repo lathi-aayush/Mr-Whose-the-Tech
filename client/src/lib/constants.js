@@ -36,7 +36,11 @@ export function parseCatalystTime(catalystTime) {
 }
 
 export function timeAgo(catalystTime) {
-  const t = parseCatalystTime(catalystTime)
+  return timeAgoMs(parseCatalystTime(catalystTime))
+}
+
+// Same wording for epoch-ms values (chat timestamps, last seen).
+export function timeAgoMs(t) {
   if (!t) return ''
   const mins = Math.round((Date.now() - t) / 60000)
   if (mins < 1) return 'just now'

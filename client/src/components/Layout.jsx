@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BellIcon, CheckCheckIcon, InboxIcon, LogOutIcon, MessageCircleIcon, PackageIcon, PlusIcon, SearchIcon, SendIcon } from 'lucide-react'
+import { BellIcon, CheckCheckIcon, LogOutIcon, MessageCircleIcon, MessagesSquareIcon, PackageIcon, PlusIcon, SearchIcon } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -22,6 +22,7 @@ import { DEMO_OPEN_SIGNUP } from '@/lib/constants'
 
 export function Layout() {
   const { user } = useAuth()
+  const notifications = useNotifications(!!user)
 
   return (
     <div className="flex min-h-svh flex-col">
@@ -36,9 +37,22 @@ export function Layout() {
 
           <nav aria-label="Account" className="flex items-center gap-2">
             {user && (
-              <Button variant="ghost" asChild className="hidden sm:inline-flex">
-                <NavLink to="/dashboard" className="aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground">My stuff</NavLink>
-              </Button>
+              <>
+                <Button variant="ghost" asChild className="hidden sm:inline-flex">
+                  <NavLink to="/dashboard" className="aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground">My listings</NavLink>
+                </Button>
+                <Button variant="ghost" asChild>
+                  <NavLink to="/chats" className="aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground">
+                    <MessagesSquareIcon data-icon="inline-start" />
+                    Chats
+                    {notifications.length > 0 && (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white" aria-label={`${notifications.length} unread`}>
+                        {notifications.length > 9 ? '9+' : notifications.length}
+                      </span>
+                    )}
+                  </NavLink>
+                </Button>
+              </>
             )}
             <Button asChild>
               <Link to="/sell">
@@ -50,7 +64,7 @@ export function Layout() {
               <Skeleton className="size-10 rounded-full" />
             ) : user ? (
               <>
-                <NotificationsMenu />
+                <NotificationsMenu items={notifications} />
                 <AccountMenu user={user} />
               </>
             ) : (
@@ -147,34 +161,56 @@ function HeaderSearch() {
   )
 }
 
-const NOTIFY_POLL_MS = 30000
+const NOTIFY_POLL_MS = 10000
 
-// ponytail: polls every 30s (and on focus / route change). Upgrade path: Catalyst Signals push.
-function NotificationsMenu() {
+// ponytail: polls every 10s (and on focus / route change). Upgrade path: Catalyst Signals push.
+const TOAST_TEXT = {
+  accepted: (n) => `Seller accepted your request for ${n.listing_title}`,
+  request: (n) => `New request for ${n.listing_title}`,
+  message: (n) => `${n.listing_title}: ${n.preview || 'New message'}`,
+}
+
+// Shared by the Chats link badge, the bell and the tab title, so one poll serves all three.
+function useNotifications(enabled) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [items, setItems] = useState([])
-  // null until the first fetch, so reloading the page doesn't toast old approvals again.
-  const seenAccepted = useRef(null)
+  // null until the first fetch, so reloading the page doesn't toast old items again.
+  const seen = useRef(null)
+  // Read inside refresh() so changing page doesn't recreate it and restart the poll.
+  const pathRef = useRef(pathname)
+  pathRef.current = pathname
 
   const refresh = useCallback(async () => {
-    if (document.visibilityState !== 'visible') return
+    if (!enabled || document.visibilityState !== 'visible') return
     try {
       const data = await api('/me/notifications')
       setItems(data.items)
-      const accepted = data.items.filter((n) => n.kind === 'accepted')
-      if (seenAccepted.current) {
-        for (const n of accepted.filter((a) => !seenAccepted.current.has(a.inquiry_id))) {
-          toast.success(`Seller accepted your request for ${n.listing_title}`, {
-            action: { label: 'Open chat', onClick: () => navigate(`/chat/${n.inquiry_id}`) },
+      // Keyed by `at` for messages, so each new message toasts once; the others once per request.
+      const keys = data.items.map((n) => ({ key: `${n.kind}-${n.inquiry_id}-${n.kind === 'message' ? n.at : ''}`, n }))
+      if (seen.current) {
+        for (const { key, n } of keys.filter((k) => !seen.current.has(k.key))) {
+          // The chat you're looking at already shows it; the server marks it read within seconds.
+          if (pathRef.current === `/chats/${n.inquiry_id}`) continue
+          toast(TOAST_TEXT[n.kind](n), {
+            action: { label: 'Open', onClick: () => navigate(`/chats/${n.inquiry_id}`) },
           })
         }
       }
-      seenAccepted.current = new Set(accepted.map((a) => a.inquiry_id))
+      seen.current = new Set(keys.map((k) => k.key))
     } catch {
       // Bell is a convenience; keep the last known list and retry next tick.
     }
-  }, [navigate])
+  }, [enabled, navigate])
+
+  // "(2) Campus Sibling" in the tab, like a messaging app.
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\)\s/, '')
+    document.title = items.length ? `(${items.length}) ${base}` : base
+    return () => {
+      document.title = base
+    }
+  }, [items.length])
 
   useEffect(() => {
     const timer = setInterval(refresh, NOTIFY_POLL_MS)
@@ -187,10 +223,22 @@ function NotificationsMenu() {
 
   // Delay lets a just-opened chat mark itself read before we ask what's still unread.
   useEffect(() => {
-    const t = setTimeout(refresh, pathname.startsWith('/chat/') ? 1500 : 0)
+    const t = setTimeout(refresh, pathname.startsWith('/chats') ? 1500 : 0)
     return () => clearTimeout(t)
   }, [pathname, refresh])
 
+  return items
+}
+
+const NOTIFICATION_LABEL = {
+  accepted: 'Seller accepted your request for ',
+  request: 'New request for ',
+  message: 'New message about ',
+}
+
+const notificationLabel = (n) => (n.kind === 'message' && n.count > 1 ? `${n.count} new messages about ` : NOTIFICATION_LABEL[n.kind])
+
+function NotificationsMenu({ items }) {
   return (
     <DropdownMenu modal={false}>
       <Tooltip>
@@ -220,10 +268,10 @@ function NotificationsMenu() {
           <DropdownMenuGroup>
             {items.map((n) => (
               <DropdownMenuItem key={`${n.kind}-${n.inquiry_id}`} asChild>
-                <Link to={`/chat/${n.inquiry_id}`} className="items-start">
+                <Link to={`/chats/${n.inquiry_id}`} className="items-start">
                   <MessageCircleIcon />
                   <span className="min-w-0 whitespace-normal">
-                    {n.kind === 'accepted' ? 'Seller accepted your request for ' : 'New message about '}
+                    {notificationLabel(n)}
                     <span className="font-semibold">{n.listing_title}</span>
                   </span>
                 </Link>
@@ -261,9 +309,8 @@ function AccountMenu({ user }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem asChild><Link to="/dashboard?tab=listings"><PackageIcon />My listings</Link></DropdownMenuItem>
-          <DropdownMenuItem asChild><Link to="/dashboard?tab=received"><InboxIcon />Requests received</Link></DropdownMenuItem>
-          <DropdownMenuItem asChild><Link to="/dashboard?tab=sent"><SendIcon />Requests sent</Link></DropdownMenuItem>
+          <DropdownMenuItem asChild><Link to="/dashboard"><PackageIcon />My listings</Link></DropdownMenuItem>
+          <DropdownMenuItem asChild><Link to="/chats"><MessagesSquareIcon />Chats</Link></DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>

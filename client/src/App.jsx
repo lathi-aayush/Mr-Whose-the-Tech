@@ -1,12 +1,12 @@
 import { SearchXIcon } from 'lucide-react'
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { Button } from './components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './components/ui/empty'
 import { Skeleton } from './components/ui/skeleton'
 import { useAuth } from './lib/auth'
 import Browse from './pages/Browse'
-import Chat from './pages/Chat'
+import Chats from './pages/Chats'
 import Dashboard from './pages/Dashboard'
 import ListingDetail from './pages/ListingDetail'
 import Login from './pages/Login'
@@ -19,6 +19,12 @@ function RequireAuth({ children }) {
   if (user === undefined) return <Skeleton className="h-96 w-full rounded-xl" />
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />
   return children
+}
+
+// Early notification emails linked to /chat/:id; chats now live on /chats.
+function LegacyChatRedirect() {
+  const { id } = useParams()
+  return <Navigate to={`/chats/${id}`} replace />
 }
 
 function NotFound() {
@@ -44,7 +50,9 @@ export default function App() {
         <Route path="listings/:id" element={<ListingDetail />} />
         <Route path="sell" element={<RequireAuth><Sell /></RequireAuth>} />
         <Route path="dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-        <Route path="chat/:id" element={<RequireAuth><Chat /></RequireAuth>} />
+        <Route path="chats" element={<RequireAuth><Chats /></RequireAuth>} />
+        <Route path="chats/:id" element={<RequireAuth><Chats /></RequireAuth>} />
+        <Route path="chat/:id" element={<LegacyChatRedirect />} />
         <Route path="login" element={<Login />} />
         <Route path="smoke" element={<SmokeTest />} />
         {/* The Catalyst SDK can still redirect to the legacy /app/ path; Slate serves from root. */}

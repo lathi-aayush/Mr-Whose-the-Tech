@@ -7,6 +7,7 @@
 			"ALLOWED_EMAIL_DOMAINS": "*",
 			"APP_URL": "https://campussibling-wnfeccgs.onslate.in",
 			"AUTH_ZAID": "50046959265",
+			"MAIL_FROM": "aayush.lathi242@vit.edu",
 			"STRATUS_BUCKET": "campus-sibling-81543",
 			"STRATUS_PUBLIC_BASE": "https://campus-sibling-81543-development.zohostratus.in"
 		}

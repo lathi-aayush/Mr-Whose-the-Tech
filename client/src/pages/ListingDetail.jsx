@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarClockIcon, CheckIcon, CircleCheckIcon, InfoIcon } from 'lucide-react'
+import { CalendarClockIcon, CheckIcon, CircleCheckIcon, ImagePlusIcon, InfoIcon, XIcon } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { AttrIcon, CATEGORY_META, CONDITION_META, CategoryArt, EXCHANGE_META, ErrorState, StatusBadge } from '@/components/common'
+import { AttrIcon, CATEGORY_META, CONDITION_META, CategoryArt, EXCHANGE_META, ErrorState, IconButton, StatusBadge } from '@/components/common'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
@@ -16,6 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { formatPrice, timeAgo, typeLabel } from '@/lib/constants'
+import { compressImage, uploadImage } from '@/lib/image'
 import { cn } from '@/lib/utils'
 
 // Owner-side moves only. Available -> Reserved happens by accepting an inquiry.
@@ -278,7 +280,7 @@ function OwnerPanel({ listing, onChanged }) {
           </Button>
         ))}
         <Button size="lg" variant="outline" asChild className="w-full">
-          <Link to="/dashboard?tab=received">View requests</Link>
+          <Link to="/chats">View requests</Link>
         </Button>
       </div>
       {error && <FieldError>{error}</FieldError>}
@@ -286,16 +288,53 @@ function OwnerPanel({ listing, onChanged }) {
   )
 }
 
+const MAX_SWAP_PHOTOS = 3
+
 function InquiryForm({ listing }) {
   const [message, setMessage] = useState('')
   const [offerType, setOfferType] = useState(listing.listing_type)
+  const [swapItem, setSwapItem] = useState('')
+  const [photos, setPhotos] = useState([]) // { id, preview, blob }
   const [status, setStatus] = useState({ busy: false, error: null, sent: false })
+  const isSwap = offerType === 'swap'
+
+  // Free preview object URLs on unmount only; a [photos] cleanup would revoke previews that are still shown.
+  const photosRef = useRef(photos)
+  photosRef.current = photos
+  useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.preview)), [])
+
+  async function addPhotos(e) {
+    const files = Array.from(e.target.files ?? []).slice(0, MAX_SWAP_PHOTOS - photos.length)
+    e.target.value = ''
+    try {
+      const added = await Promise.all(
+        files.map(async (file) => {
+          const blob = await compressImage(file)
+          return { id: crypto.randomUUID(), blob, preview: URL.createObjectURL(blob) }
+        }),
+      )
+      setPhotos((p) => [...p, ...added])
+    } catch (err) {
+      setStatus((s) => ({ ...s, error: err.message }))
+    }
+  }
+
+  function removePhoto(id) {
+    const gone = photos.find((x) => x.id === id)
+    if (gone) URL.revokeObjectURL(gone.preview)
+    setPhotos((p) => p.filter((x) => x.id !== id))
+  }
 
   async function submit(e) {
     e.preventDefault()
     setStatus({ busy: true, error: null, sent: false })
     try {
-      await api(`/listings/${listing.ROWID}/inquiries`, { method: 'POST', body: { message, offer_type: offerType } })
+      const body = { message, offer_type: offerType }
+      if (isSwap) {
+        body.swap_item = swapItem
+        body.swap_image_urls = await Promise.all(photos.map((p) => uploadImage(p.blob)))
+      }
+      await api(`/listings/${listing.ROWID}/inquiries`, { method: 'POST', body })
       setStatus({ busy: false, error: null, sent: true })
       toast.success('Request sent')
     } catch (err) {
@@ -311,7 +350,7 @@ function InquiryForm({ listing }) {
         <AlertDescription className="text-brand-900/90">
           <p>
             You'll get the seller's contact once they accept. Track it in{' '}
-            <Link to="/dashboard?tab=sent" className="font-semibold underline underline-offset-4">Requests sent</Link>.
+            <Link to="/chats" className="font-semibold underline underline-offset-4">Chats</Link>.
           </p>
         </AlertDescription>
       </Alert>
@@ -332,6 +371,42 @@ function InquiryForm({ listing }) {
             ))}
           </ToggleGroup>
         </FieldSet>
+        {isSwap && (
+          <FieldSet className="fade-in gap-3">
+            <Field>
+              <FieldLabel htmlFor="swap-item">What are you offering?</FieldLabel>
+              <Input
+                id="swap-item"
+                required
+                minLength={2}
+                maxLength={100}
+                value={swapItem}
+                onChange={(e) => setSwapItem(e.target.value)}
+                placeholder="e.g. HC Verma Vol 1, good condition"
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Photos of it <span className="font-normal text-muted-foreground">(optional, {photos.length}/{MAX_SWAP_PHOTOS})</span></FieldLabel>
+              <div className="grid grid-cols-3 gap-3">
+                {photos.map((p, i) => (
+                  <div key={p.id} className="fade-in relative aspect-square overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10">
+                    <img src={p.preview} alt={`Swap photo ${i + 1} preview`} className="size-full object-cover" />
+                    <IconButton label={`Remove photo ${i + 1}`} size="icon-sm" variant="outline" onClick={() => removePhoto(p.id)} className="absolute right-1 top-1 bg-background/90 shadow">
+                      <XIcon />
+                    </IconButton>
+                  </div>
+                ))}
+                {photos.length < MAX_SWAP_PHOTOS && (
+                  <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-input text-muted-foreground hover:border-brand-500 hover:text-brand-700 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                    <ImagePlusIcon className="size-6" aria-hidden="true" />
+                    <span className="text-xs font-medium">Add photo</span>
+                    <input type="file" accept="image/*" multiple onChange={addPhotos} className="sr-only" />
+                  </label>
+                )}
+              </div>
+            </Field>
+          </FieldSet>
+        )}
         <Field data-invalid={!!status.error || undefined}>
           <FieldLabel htmlFor="inquiry-message">Message to seller</FieldLabel>
           <Textarea
@@ -346,9 +421,9 @@ function InquiryForm({ listing }) {
           />
           {status.error ? <FieldError>{status.error}</FieldError> : <FieldDescription>Say when and where you can meet.</FieldDescription>}
         </Field>
-        <Button type="submit" size="lg" disabled={status.busy || !message.trim()} className="w-full">
+        <Button type="submit" size="lg" disabled={status.busy || !message.trim() || (isSwap && swapItem.trim().length < 2)} className="w-full">
           {status.busy && <Spinner data-icon="inline-start" />}
-          {status.busy ? 'Sending…' : 'Send request'}
+          {status.busy ? (isSwap && photos.length ? 'Uploading and sending…' : 'Sending…') : 'Send request'}
         </Button>
       </FieldGroup>
     </form>

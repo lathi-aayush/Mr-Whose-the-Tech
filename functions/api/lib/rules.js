@@ -9,6 +9,7 @@ const SORTS = ['newest', 'oldest', 'price_asc', 'price_desc'];
 const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_IMAGES = 5;
+const MAX_SWAP_IMAGES = 3;
 
 // Owner-driven transitions. Available -> Reserved is deliberately absent:
 // it only happens by accepting an inquiry, so a buyer is always attached.
@@ -98,11 +99,31 @@ function validateListingInput(body, ownPrefix) {
   return listing;
 }
 
-function validateInquiryInput(body) {
+function validateInquiryInput(body, ownPrefix) {
   if (!body || typeof body !== 'object') throw new ValidationError('Request body is required');
-  return {
+  const inquiry = {
     message: cleanText(body.message, 'Message', { min: 1, max: 500 }),
     offer_type: oneOf(body.offer_type, LISTING_TYPES, 'Offer type'),
+    swap_item: null,
+    swap_image_urls: [],
+  };
+  if (inquiry.offer_type !== 'swap') return inquiry;
+  // A swap must say what is offered; photos are optional but must be this user's uploads.
+  inquiry.swap_item = cleanText(body.swap_item, 'What you are offering', { min: 2, max: 100 });
+  const images = Array.isArray(body.swap_image_urls) ? body.swap_image_urls : [];
+  if (images.length > MAX_SWAP_IMAGES) throw new ValidationError(`At most ${MAX_SWAP_IMAGES} photos of your swap item`);
+  inquiry.swap_image_urls = images.map((u) => checkOwnedUrl(u, ownPrefix, 'Swap photo'));
+  return inquiry;
+}
+
+// Peer is "online" while their chat poll (every 3s) keeps refreshing seenAt.
+function presenceState(peer, now = Date.now()) {
+  const seenAt = Number(peer && peer.seenAt) || null;
+  const typingAt = Number(peer && peer.typingAt) || 0;
+  return {
+    online: !!seenAt && now - seenAt < 10000,
+    typing: !!typingAt && now - typingAt < 5000,
+    seenAt,
   };
 }
 
@@ -143,13 +164,25 @@ function sellerContact(inquiry, listing) {
 function unreadNotifications(inquiries, userId) {
   const out = [];
   for (const i of inquiries) {
-    if (i.status !== 'Accepted') continue;
     const role = chatRole(i, userId);
     if (!role) continue;
+    // A pending request waits on the seller, so it stays in their bell until they accept or decline.
+    if (i.status === 'Pending' && role === 'seller') {
+      out.push({ inquiry_id: i.ROWID, listing_title: i.listing_title, kind: 'request', at: null });
+      continue;
+    }
+    if (i.status !== 'Accepted') continue;
     const readAt = Number(role === 'buyer' ? i.buyer_read_at : i.seller_read_at) || 0;
     const lastAt = Number(i.last_message_at) || 0;
     if (lastAt > readAt && String(i.last_sender_id) !== String(userId)) {
-      out.push({ inquiry_id: i.ROWID, listing_title: i.listing_title, kind: 'message', at: lastAt });
+      out.push({
+        inquiry_id: i.ROWID,
+        listing_title: i.listing_title,
+        kind: 'message',
+        at: lastAt,
+        count: Number(i[`${role}_unread`]) || 1,
+        preview: i.last_message_preview || '',
+      });
     } else if (role === 'buyer' && !readAt) {
       out.push({ inquiry_id: i.ROWID, listing_title: i.listing_title, kind: 'accepted', at: lastAt || null });
     }
@@ -227,6 +260,7 @@ module.exports = {
   chatRole,
   sellerContact,
   unreadNotifications,
+  presenceState,
   validateUploadRequest,
   assertOwnerTransition,
   searchListings,

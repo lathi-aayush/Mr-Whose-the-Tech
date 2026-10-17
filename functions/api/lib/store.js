@@ -32,6 +32,16 @@ function parseListing(row) {
   return { ...row, price: row.price === null || row.price === '' ? null : Number(row.price), image_urls: images };
 }
 
+function parseInquiry(row) {
+  let images = [];
+  try {
+    images = JSON.parse(row.swap_image_urls || '[]');
+  } catch {
+    images = [];
+  }
+  return { ...row, swap_image_urls: images };
+}
+
 function createStore(adminApp) {
   const zcql = adminApp.zcql();
   const listings = adminApp.datastore().table('Listings');
@@ -84,23 +94,27 @@ function createStore(adminApp) {
 
     async getInquiry(inquiryId) {
       const rows = await query(`SELECT * FROM Inquiries WHERE ROWID = ${id(inquiryId)}`, 'Inquiries');
-      return rows[0] || null;
+      return rows[0] ? parseInquiry(rows[0]) : null;
     },
 
     async inquiriesForListing(listingId) {
-      return scan(`SELECT * FROM Inquiries WHERE listing_id = ${id(listingId)} ORDER BY CREATEDTIME DESC`, 'Inquiries');
+      const rows = await scan(`SELECT * FROM Inquiries WHERE listing_id = ${id(listingId)} ORDER BY CREATEDTIME DESC`, 'Inquiries');
+      return rows.map(parseInquiry);
     },
 
     async inquiriesByBuyer(buyerId) {
-      return scan(`SELECT * FROM Inquiries WHERE buyer_id = ${str(buyerId)} ORDER BY CREATEDTIME DESC`, 'Inquiries');
+      const rows = await scan(`SELECT * FROM Inquiries WHERE buyer_id = ${str(buyerId)} ORDER BY CREATEDTIME DESC`, 'Inquiries');
+      return rows.map(parseInquiry);
     },
 
     async inquiriesForSeller(sellerId) {
-      return scan(`SELECT * FROM Inquiries WHERE seller_id = ${str(sellerId)} ORDER BY CREATEDTIME DESC`, 'Inquiries');
+      const rows = await scan(`SELECT * FROM Inquiries WHERE seller_id = ${str(sellerId)} ORDER BY CREATEDTIME DESC`, 'Inquiries');
+      return rows.map(parseInquiry);
     },
 
     async createInquiry(data) {
-      return inquiries.insertRow(data);
+      const row = await inquiries.insertRow({ ...data, swap_image_urls: JSON.stringify(data.swap_image_urls || []) });
+      return parseInquiry(row);
     },
 
     async updateInquiry(inquiryId, fields) {

@@ -110,12 +110,42 @@ test('unreadNotifications: approval for buyer, messages from the other side only
   // New message from the other side.
   const msg = { ...base, buyer_read_at: 100, last_message_at: 200, last_sender_id: 's' };
   assert.deepEqual(r.unreadNotifications([msg], 'b').map((n) => n.kind), ['message']);
+  // Message notifications carry the unread count and preview for the toast.
+  const counted = { ...msg, buyer_unread: 3, last_message_preview: 'is it still there?' };
+  const [note] = r.unreadNotifications([counted], 'b');
+  assert.equal(note.count, 3);
+  assert.equal(note.preview, 'is it still there?');
   // Own message is not unread; neither is a message older than read_at.
   assert.deepEqual(r.unreadNotifications([msg], 's'), []);
   assert.deepEqual(r.unreadNotifications([{ ...msg, buyer_read_at: 300 }], 'b'), []);
-  // Pending/declined and strangers never notify.
+  // Pending notifies the seller (they must act), not the buyer; declined and strangers never notify.
+  assert.deepEqual(r.unreadNotifications([{ ...base, status: 'Pending' }], 's').map((n) => n.kind), ['request']);
   assert.deepEqual(r.unreadNotifications([{ ...base, status: 'Pending' }], 'b'), []);
+  assert.deepEqual(r.unreadNotifications([{ ...base, status: 'Declined' }], 's'), []);
   assert.deepEqual(r.unreadNotifications([base], 'x'), []);
+});
+
+test('validateInquiryInput: swap needs an item, limits and owns photos, others drop swap fields', () => {
+  const swap = { message: 'hi', offer_type: 'swap', swap_item: '  HC Verma  Vol 1 ', swap_image_urls: [`${PREFIX}a.webp`] };
+  const ok = r.validateInquiryInput(swap, PREFIX);
+  assert.equal(ok.swap_item, 'HC Verma Vol 1');
+  assert.deepEqual(ok.swap_image_urls, [`${PREFIX}a.webp`]);
+  assert.throws(() => r.validateInquiryInput({ ...swap, swap_item: '' }, PREFIX), /offering/);
+  assert.throws(() => r.validateInquiryInput({ ...swap, swap_item: undefined }, PREFIX), /offering/);
+  assert.throws(() => r.validateInquiryInput({ ...swap, swap_image_urls: Array(4).fill(`${PREFIX}a.webp`) }, PREFIX), /At most 3/);
+  assert.throws(() => r.validateInquiryInput({ ...swap, swap_image_urls: ['https://evil.com/x.jpg'] }, PREFIX), /uploaded/);
+  assert.equal(r.validateInquiryInput({ ...swap, swap_image_urls: undefined }, PREFIX).swap_image_urls.length, 0);
+  const buy = r.validateInquiryInput({ ...swap, offer_type: 'sell' }, PREFIX);
+  assert.equal(buy.swap_item, null);
+  assert.deepEqual(buy.swap_image_urls, []);
+});
+
+test('presenceState: online within 10s, typing within 5s, missing means offline', () => {
+  const now = 1_000_000;
+  assert.deepEqual(r.presenceState({ seenAt: now - 3000, typingAt: now - 1000 }, now), { online: true, typing: true, seenAt: now - 3000 });
+  assert.deepEqual(r.presenceState({ seenAt: now - 20000, typingAt: now - 9000 }, now), { online: false, typing: false, seenAt: now - 20000 });
+  assert.deepEqual(r.presenceState({ seenAt: now - 1000, typingAt: 0 }, now), { online: true, typing: false, seenAt: now - 1000 });
+  assert.deepEqual(r.presenceState(null, now), { online: false, typing: false, seenAt: null });
 });
 
 test('searchListings filters, hides Completed by default and sorts deterministically', () => {
