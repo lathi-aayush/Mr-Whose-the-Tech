@@ -1,48 +1,45 @@
-import { useEffect, useState } from 'react'
-import { api } from './lib/api'
-import { isSignedIn, mountSignIn, signOut } from './lib/catalyst'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Layout } from './components/Layout'
+import { Skeleton, primaryButton } from './components/ui'
+import { useAuth } from './lib/auth'
+import Browse from './pages/Browse'
+import Dashboard from './pages/Dashboard'
+import ListingDetail from './pages/ListingDetail'
+import Login from './pages/Login'
+import Sell from './pages/Sell'
+import SmokeTest from './pages/SmokeTest'
 
-// ponytail: smoke-test screen proving Slate -> function -> auth works end to end.
-// Replaced by the real router once the deploy is verified.
-export default function App() {
-  const [health, setHealth] = useState('checking…')
-  const [me, setMe] = useState(null)
-  const [signedIn, setSignedIn] = useState(null)
-  const [error, setError] = useState(null)
+function RequireAuth({ children }) {
+  const { user } = useAuth()
+  const location = useLocation()
+  if (user === undefined) return <Skeleton className="h-96 w-full rounded-xl" />
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />
+  return children
+}
 
-  useEffect(() => {
-    api('/health')
-      .then((d) => setHealth(d.status))
-      .catch((e) => setHealth(`error: ${e.message}`))
-
-    isSignedIn().then(async (ok) => {
-      setSignedIn(ok)
-      if (ok) {
-        try {
-          setMe(await api('/me'))
-        } catch (e) {
-          setError(e.message)
-        }
-      } else {
-        mountSignIn('login-container')
-      }
-    })
-  }, [])
-
+function NotFound() {
   return (
-    <main className="mx-auto max-w-xl p-4 font-sans">
-      <h1 className="text-2xl font-semibold">Campus Exchange: smoke test</h1>
-      <p className="mt-4">API health: <strong>{health}</strong></p>
-      {signedIn === false && <div id="login-container" className="mt-6 min-h-96" />}
-      {me && (
-        <div className="mt-4">
-          <p>Signed in as <strong>{me.email}</strong> (campus: {String(me.campusVerified)})</p>
-          <button type="button" onClick={signOut} className="mt-3 rounded bg-gray-900 px-4 py-2 text-white">
-            Sign out
-          </button>
-        </div>
-      )}
-      {error && <p className="mt-4 text-red-700" role="alert">{error}</p>}
-    </main>
+    <div className="flex min-h-64 flex-col items-center justify-center text-center">
+      <p className="text-lg font-semibold text-ink-900">Page not found</p>
+      <Link to="/" className={`${primaryButton} mt-4`}>Back to listings</Link>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<Browse />} />
+        <Route path="listings/:id" element={<ListingDetail />} />
+        <Route path="sell" element={<RequireAuth><Sell /></RequireAuth>} />
+        <Route path="dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="login" element={<Login />} />
+        <Route path="smoke" element={<SmokeTest />} />
+        {/* The Catalyst SDK can still redirect to the legacy /app/ path; Slate serves from root. */}
+        <Route path="app/*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
   )
 }

@@ -31,10 +31,15 @@ export async function getAuthToken() {
   return res.access_token
 }
 
-export async function mountSignIn(containerId) {
+// Only same-site paths, so a crafted ?next= can't bounce users to another domain after login.
+export function safeNext(next) {
+  return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/'
+}
+
+export async function mountSignIn(containerId, next = '/') {
   const catalyst = await waitForSdk()
-  // Keys from the console's v4 embed snippet. service_url must be "/" on Slate; the console default "/app/index.html" 404s there.
-  catalyst.auth.signIn(containerId, { service_url: '/', css_url: '/embedded-login.css' })
+  // Keys from the console's v4 embed snippet. service_url must be a root path on Slate; the console default "/app/index.html" 404s there.
+  catalyst.auth.signIn(containerId, { service_url: safeNext(next), css_url: '/embedded-login.css' })
 }
 
 export function signOut() {
