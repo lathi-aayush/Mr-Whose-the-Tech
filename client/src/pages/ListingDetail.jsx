@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckIcon, CircleCheckIcon, InfoIcon } from 'lucide-react'
+import { CalendarClockIcon, CheckIcon, CircleCheckIcon, InfoIcon } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { CategoryArt, ErrorState, StatusBadge } from '@/components/common'
+import { AttrIcon, CATEGORY_META, CONDITION_META, CategoryArt, EXCHANGE_META, ErrorState, StatusBadge } from '@/components/common'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
@@ -77,33 +77,31 @@ export default function ListingDetail() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Details</CardTitle>
+              <CardTitle>Description</CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
-                <Detail term="Condition" value={listing.item_condition} />
-                <Detail term="Category" value={listing.category} />
-                <Detail term="Exchange" value={typeLabel(listing.listing_type)} />
-                <Detail term="Listed" value={timeAgo(listing.CREATEDTIME)} />
-              </dl>
-              <div className="border-t pt-4">
-                {listing.description ? (
-                  <p className="whitespace-pre-line text-base leading-relaxed">{listing.description}</p>
-                ) : (
-                  <p className="text-muted-foreground">No description. Ask the seller in your request.</p>
-                )}
-              </div>
+            <CardContent>
+              {listing.description ? (
+                <p className="whitespace-pre-line text-base leading-relaxed">{listing.description}</p>
+              ) : (
+                <p className="text-muted-foreground">No description. Ask the seller in your request.</p>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
+        <aside className="flex min-w-0 flex-col gap-4">
           <Card>
             <CardContent className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={listing.status} />
-                  <span className="text-xs text-muted-foreground">{listing.item_condition} · {typeLabel(listing.listing_type)}</span>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <AttrIcon inline meta={CONDITION_META[listing.item_condition]} />
+                    {listing.item_condition}
+                    <span aria-hidden="true">·</span>
+                    <AttrIcon inline meta={EXCHANGE_META[listing.listing_type]} />
+                    {typeLabel(listing.listing_type)}
+                  </span>
                 </div>
                 <h1 className="text-xl font-semibold leading-snug sm:text-2xl">{listing.title}</h1>
                 <p className={cn('text-3xl font-bold', listing.listing_type !== 'sell' && 'text-brand-700')}>{formatPrice(listing)}</p>
@@ -149,17 +147,37 @@ export default function ListingDetail() {
             <li className="flex gap-1.5"><CheckIcon className="size-3.5 shrink-0 text-brand-700" aria-hidden="true" />Meet in a public spot on campus, like the library or canteen.</li>
             <li className="flex gap-1.5"><CheckIcon className="size-3.5 shrink-0 text-brand-700" aria-hidden="true" />Check the item before you pay or swap.</li>
           </ul>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Details</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+                <Detail term="Condition" value={listing.item_condition} meta={CONDITION_META[listing.item_condition]} hint={CONDITION_META[listing.item_condition]?.hint} />
+                <Detail term="Exchange" value={typeLabel(listing.listing_type)} meta={EXCHANGE_META[listing.listing_type]} hint={EXCHANGE_META[listing.listing_type]?.hint} />
+                <Detail term="Category" value={listing.category} meta={CATEGORY_META[listing.category]} />
+                <Detail term="Listed" value={timeAgo(listing.CREATEDTIME)} meta={LISTED_META} />
+              </dl>
+            </CardContent>
+          </Card>
         </aside>
       </div>
     </div>
   )
 }
 
-function Detail({ term, value }) {
+const LISTED_META = { icon: CalendarClockIcon, tone: 'bg-muted text-muted-foreground' }
+
+function Detail({ term, value, meta, hint }) {
   return (
-    <div>
-      <dt className="text-muted-foreground">{term}</dt>
-      <dd className="mt-0.5 font-medium">{value}</dd>
+    <div className="flex items-start gap-3">
+      <AttrIcon meta={meta} />
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{term}</dt>
+        <dd className="font-medium leading-5">{value}</dd>
+        {hint && <dd className="text-xs text-muted-foreground">{hint}</dd>}
+      </div>
     </div>
   )
 }
@@ -337,7 +355,7 @@ function InquiryForm({ listing }) {
   )
 }
 
-// Mirrors the loaded layout: breadcrumb, gallery + details card, sticky aside card.
+// Mirrors the loaded layout: breadcrumb, gallery + description, then aside card, tips, details.
 function DetailSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading listing">
@@ -346,37 +364,47 @@ function DetailSkeleton() {
         <div className="flex flex-col gap-6">
           <Skeleton className="aspect-[4/3] w-full rounded-xl" />
           <Card>
-            <CardHeader><Skeleton className="h-[22px] w-16" /></CardHeader>
+            <CardHeader><Skeleton className="h-[22px] w-24" /></CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+            </CardContent>
+          </Card>
+        </div>
+        <div className="flex flex-col gap-4">
+          <Card>
             <CardContent className="flex flex-col gap-4">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-7 w-3/4" />
+                <Skeleton className="h-9 w-28" />
+              </div>
+              <Skeleton className="h-16 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-lg" />
+            </CardContent>
+          </Card>
+          <div className="flex flex-col gap-1.5 px-1">
+            <Skeleton className="h-4 w-72 max-w-full" />
+            <Skeleton className="h-4 w-56" />
+          </div>
+          <Card>
+            <CardHeader><Skeleton className="h-[22px] w-16" /></CardHeader>
+            <CardContent>
+              <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
                 {Array.from({ length: 4 }, (_, i) => (
-                  <div key={i} className="flex flex-col gap-1">
-                    <Skeleton className="h-4 w-16" />
-                    <Skeleton className="h-4 w-20" />
+                  <div key={i} className="flex items-start gap-3">
+                    <Skeleton className="size-9 rounded-lg" />
+                    <div className="flex flex-col gap-1">
+                      <Skeleton className="h-3 w-16" />
+                      <Skeleton className="h-4 w-24" />
+                      {i < 2 && <Skeleton className="h-3 w-36" />}
+                    </div>
                   </div>
                 ))}
-              </div>
-              <div className="flex flex-col gap-2 border-t pt-4">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
               </div>
             </CardContent>
           </Card>
         </div>
-        <Card className="self-start">
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-7 w-3/4" />
-              <Skeleton className="h-9 w-28" />
-            </div>
-            <Skeleton className="h-16 w-full rounded-lg" />
-            <Skeleton className="h-6 w-24" />
-            <Skeleton className="h-11 w-full rounded-lg" />
-            <Skeleton className="h-24 w-full rounded-lg" />
-            <Skeleton className="h-12 w-full rounded-lg" />
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

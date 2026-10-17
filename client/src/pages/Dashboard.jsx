@@ -1,18 +1,37 @@
-import { useCallback, useEffect, useState } from 'react'
-import { InboxIcon, MailIcon, PackageOpenIcon, SendIcon } from 'lucide-react'
+import { useCallback, useEffect, useId, useState } from 'react'
+import { InboxIcon, MailIcon, MessageCircleIcon, PackageOpenIcon, PhoneIcon, SendIcon } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ListingCard, ListingCardSkeleton } from '@/components/ListingCard'
 import { ErrorState, StatusBadge } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { FieldError } from '@/components/ui/field'
+import { Field, FieldContent, FieldDescription, FieldError, FieldLabel, FieldTitle } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { OFFER_LABELS, timeAgo } from '@/lib/constants'
+
+// Mirrors validateContactShare in functions/api/lib/rules.js; the server is the source of truth.
+const PHONE_RE = /^\+?\d{10,15}$/
+const cleanPhone = (p) => p.replace(/[\s\-()]/g, '')
+
+// Mirrors unreadNotifications in rules.js so the row dot matches the header bell.
+function isUnread(i, asSeller) {
+  if (i.status !== 'Accepted') return false
+  const readAt = Number(asSeller ? i.seller_read_at : i.buyer_read_at) || 0
+  const me = asSeller ? i.seller_id : i.buyer_id
+  if ((Number(i.last_message_at) || 0) > readAt && String(i.last_sender_id) !== String(me)) return true
+  return !asSeller && !readAt
+}
 
 const TABS = [
   { id: 'listings', label: 'My listings', path: '/me/listings', key: 'listings' },
@@ -88,25 +107,119 @@ function Section({ tab }) {
   )
 }
 
-function InquiryRow({ inquiry, asSeller, onChanged }) {
-  const [busy, setBusy] = useState(null)
+// Seller picks what the buyer sees before anything is reserved: email only, or a typed phone number.
+function AcceptDialog({ inquiry, open, onOpenChange, onDone }) {
+  const { user } = useAuth()
+  const uid = useId()
+  const [share, setShare] = useState('email')
+  const [phone, setPhone] = useState('')
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  async function respond(action) {
-    setBusy(action)
+  async function submit(e) {
+    e.preventDefault()
+    if (share === 'phone' && !PHONE_RE.test(cleanPhone(phone))) {
+      setError('Enter a valid phone number (10–15 digits, optional +)')
+      return
+    }
+    setBusy(true)
     setError(null)
     try {
-      await api(`/inquiries/${inquiry.ROWID}`, { method: 'PATCH', body: { action } })
-      toast.success(action === 'accept' ? 'Accepted. Item reserved for this buyer.' : 'Request declined')
+      await api(`/inquiries/${inquiry.ROWID}`, { method: 'PATCH', body: { action: 'accept', share, phone } })
+      toast.success('Accepted. Item reserved and chat unlocked.')
+      onOpenChange(false)
+      await onDone()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
+      <DialogContent>
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <DialogHeader>
+            <DialogTitle>Share your contact with {inquiry.buyer_name}</DialogTitle>
+            <DialogDescription>The buyer only sees what you pick. You can always talk in the on-site chat.</DialogDescription>
+          </DialogHeader>
+
+          <RadioGroup value={share} onValueChange={(v) => { setShare(v); setError(null) }}>
+            <FieldLabel htmlFor={`${uid}-opt-email`}>
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>Email ID</FieldTitle>
+                  <FieldDescription className="break-all">{user?.email}</FieldDescription>
+                </FieldContent>
+                <RadioGroupItem value="email" id={`${uid}-opt-email`} />
+              </Field>
+            </FieldLabel>
+            <FieldLabel htmlFor={`${uid}-opt-phone`}>
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>Give phone number</FieldTitle>
+                  <FieldDescription>Your email stays hidden.</FieldDescription>
+                </FieldContent>
+                <RadioGroupItem value="phone" id={`${uid}-opt-phone`} />
+              </Field>
+            </FieldLabel>
+          </RadioGroup>
+
+          {share === 'phone' && (
+            <Field data-invalid={!!error || undefined}>
+              <Label htmlFor={`${uid}-phone-input`}>Phone number</Label>
+              <Input
+                id={`${uid}-phone-input`}
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                autoFocus
+                placeholder="+91 98765 43210"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                aria-invalid={!!error}
+              />
+            </Field>
+          )}
+          {error && <FieldError>{error}</FieldError>}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={busy}>
+              {busy && <Spinner data-icon="inline-start" />}
+              {busy ? 'Accepting…' : 'Okay'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function InquiryRow({ inquiry, asSeller, onChanged }) {
+  const [busy, setBusy] = useState(false)
+  const [accepting, setAccepting] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function decline() {
+    setBusy(true)
+    setError(null)
+    try {
+      await api(`/inquiries/${inquiry.ROWID}`, { method: 'PATCH', body: { action: 'decline' } })
+      toast.success('Request declined')
       await onChanged()
     } catch (e) {
       setError(e.message)
-      setBusy(null)
+      setBusy(false)
     }
   }
 
   const offer = OFFER_LABELS[inquiry.offer_type] ?? inquiry.offer_type
-  const contact = asSeller ? inquiry.buyer_email : inquiry.seller_email
+  // Buyer sees only what the seller chose to share; the server sends nothing else.
+  const contact = asSeller ? { type: 'email', value: inquiry.buyer_email } : inquiry.seller_contact
+  const ContactIcon = contact?.type === 'phone' ? PhoneIcon : MailIcon
+  const unread = isUnread(inquiry, asSeller)
   return (
     <li>
       <Card>
@@ -123,22 +236,43 @@ function InquiryRow({ inquiry, asSeller, onChanged }) {
 
           {asSeller && inquiry.status === 'Pending' && (
             <div className="mt-1 flex flex-wrap gap-2">
-              <Button disabled={!!busy} onClick={() => respond('accept')}>
-                {busy === 'accept' && <Spinner data-icon="inline-start" />}
-                {busy === 'accept' ? 'Accepting…' : 'Accept & reserve'}
+              <Button disabled={busy} onClick={() => setAccepting(true)}>Accept & reserve</Button>
+              <Button variant="outline" disabled={busy} onClick={decline}>
+                {busy && <Spinner data-icon="inline-start" />}
+                {busy ? 'Declining…' : 'Decline'}
               </Button>
-              <Button variant="outline" disabled={!!busy} onClick={() => respond('decline')}>
-                {busy === 'decline' && <Spinner data-icon="inline-start" />}
-                {busy === 'decline' ? 'Declining…' : 'Decline'}
-              </Button>
+              <AcceptDialog inquiry={inquiry} open={accepting} onOpenChange={setAccepting} onDone={onChanged} />
             </div>
           )}
-          {inquiry.status === 'Accepted' && contact && (
+          {inquiry.status === 'Accepted' && contact?.value && (
             <p className="mt-1 flex flex-wrap items-center gap-1.5">
-              <MailIcon className="size-4 text-brand-700" aria-hidden="true" />
+              <ContactIcon className="size-4 text-brand-700" aria-hidden="true" />
               {asSeller ? 'Contact the buyer:' : 'Accepted! Contact the seller:'}
-              <a href={`mailto:${contact}`} className="font-semibold text-brand-700 underline underline-offset-4">{contact}</a>
+              <a href={`${contact.type === 'phone' ? 'tel' : 'mailto'}:${contact.value}`} className="font-semibold text-brand-700 underline underline-offset-4">{contact.value}</a>
             </p>
+          )}
+          {asSeller && inquiry.status === 'Accepted' && (
+            <p className="text-xs text-muted-foreground">
+              You shared your {inquiry.shared_contact === 'phone' ? `phone number (${inquiry.seller_phone})` : 'email'} with this buyer.
+            </p>
+          )}
+          {inquiry.status === 'Accepted' && (
+            <div className="mt-1 flex items-center gap-2">
+              <Button asChild>
+                <Link to={`/chat/${inquiry.ROWID}`}>
+                  <MessageCircleIcon data-icon="inline-start" />
+                  Open chat
+                </Link>
+              </Button>
+              {unread && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0} role="img" aria-label="Unread" className="size-2.5 rounded-full bg-destructive" />
+                  </TooltipTrigger>
+                  <TooltipContent>{asSeller ? 'New message' : 'Seller accepted or sent a new message'}</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
           )}
           {error && <FieldError>{error}</FieldError>}
         </CardContent>

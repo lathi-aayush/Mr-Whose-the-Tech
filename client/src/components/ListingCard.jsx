@@ -4,7 +4,7 @@ import { cn } from 'cn'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatPrice, timeAgo } from '@/lib/constants'
-import { CategoryArt, StatusBadge } from './common'
+import { AttrIcon, CONDITION_META, CategoryArt, StatusBadge } from './common'
 
 // Price-first card, the order OLX and Marketplace users scan in.
 export function ListingCard({ listing }) {
@@ -35,7 +35,10 @@ export function ListingCard({ listing }) {
           <Link to={`/listings/${listing.ROWID}`} className="outline-none after:absolute after:inset-0">{listing.title}</Link>
         </h3>
         <p className="mt-auto flex items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
-          <span className="truncate">{listing.item_condition}</span>
+          <span className="flex min-w-0 items-center gap-1">
+            <AttrIcon inline meta={CONDITION_META[listing.item_condition]} />
+            <span className="truncate">{listing.item_condition}</span>
+          </span>
           <span className="shrink-0">{timeAgo(listing.CREATEDTIME)}</span>
         </p>
       </div>

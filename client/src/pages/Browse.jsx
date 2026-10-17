@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PackageOpenIcon, SearchXIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ListingCard, ListingCardSkeleton } from '@/components/ListingCard'
-import { ErrorState, IconButton } from '@/components/common'
+import { AttrIcon, CATEGORY_META, CONDITION_META, EXCHANGE_META, ErrorState, IconButton } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -19,9 +19,9 @@ import { cn } from '@/lib/utils'
 
 const DEFAULT_STATUS = ['Available', 'Reserved']
 const FACETS = [
-  { key: 'category', label: 'Category', field: 'category', options: CATEGORIES.map((c) => ({ value: c, label: c })) },
-  { key: 'condition', label: 'Condition', field: 'item_condition', options: CONDITIONS.map((c) => ({ value: c, label: c })) },
-  { key: 'type', label: 'Exchange type', field: 'listing_type', options: LISTING_TYPES },
+  { key: 'category', label: 'Category', field: 'category', meta: CATEGORY_META, options: CATEGORIES.map((c) => ({ value: c, label: c })) },
+  { key: 'condition', label: 'Condition', field: 'item_condition', meta: CONDITION_META, options: CONDITIONS.map((c) => ({ value: c, label: c })) },
+  { key: 'type', label: 'Exchange type', field: 'listing_type', meta: EXCHANGE_META, options: LISTING_TYPES },
   { key: 'status', label: 'Availability', field: 'status', options: STATUSES.map((s) => ({ value: s, label: s === 'Completed' ? 'Completed (gone)' : s })) },
 ]
 const labelFor = (key, value) => FACETS.find((f) => f.key === key)?.options.find((o) => o.value === value)?.label ?? value
@@ -293,7 +293,10 @@ function FilterPanel({ idPrefix, f, counts, toggle, setValue, loading }) {
               return (
                 <Field key={o.value} orientation="horizontal" className={cn('min-h-11 items-center rounded-md px-1.5 hover:bg-muted lg:min-h-9', n === 0 && !checked && 'opacity-55')}>
                   <Checkbox id={id} checked={checked} onCheckedChange={() => toggle(facet.key, o.value)} />
-                  <FieldLabel htmlFor={id} className="flex-1 cursor-pointer font-normal">{o.label}</FieldLabel>
+                  <FieldLabel htmlFor={id} className="flex-1 cursor-pointer items-center gap-1.5 font-normal">
+                    {facet.meta && <AttrIcon inline meta={facet.meta[o.value]} className="size-4" />}
+                    {o.label}
+                  </FieldLabel>
                   {loading ? <Skeleton className="h-3 w-4" /> : <span className="text-xs tabular-nums text-muted-foreground">{n}</span>}
                 </Field>
               )

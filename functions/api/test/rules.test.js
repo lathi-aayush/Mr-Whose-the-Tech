@@ -69,6 +69,55 @@ test('validateUploadRequest allows images up to 5 MB only', () => {
   assert.throws(() => r.validateUploadRequest({ contentType: 'image/png', size: 6 * 1024 * 1024 }), /5 MB/);
 });
 
+test('validateMessageInput trims, keeps newlines, rejects empty and oversized', () => {
+  assert.equal(r.validateMessageInput({ body: '  hi\nthere  ' }).body, 'hi\nthere');
+  assert.throws(() => r.validateMessageInput({ body: '   ' }), /empty/);
+  assert.throws(() => r.validateMessageInput({ body: 'x'.repeat(1001) }), /1000/);
+  assert.throws(() => r.validateMessageInput({ body: 5 }), /text/);
+});
+
+test('chatRole identifies buyer, seller and strangers', () => {
+  const inq = { buyer_id: '1', seller_id: '2' };
+  assert.equal(r.chatRole(inq, '1'), 'buyer');
+  assert.equal(r.chatRole(inq, 2), 'seller');
+  assert.equal(r.chatRole(inq, '3'), null);
+  assert.equal(r.chatRole(null, '1'), null);
+});
+
+test('validateContactShare: email, normalised phone, bad input', () => {
+  assert.deepEqual(r.validateContactShare({ share: 'email' }), { shared_contact: 'email', seller_phone: null });
+  assert.deepEqual(r.validateContactShare({ share: 'phone', phone: '+91 98765-43210' }), { shared_contact: 'phone', seller_phone: '+919876543210' });
+  assert.throws(() => r.validateContactShare({ share: 'phone', phone: '12345' }), /phone/);
+  assert.throws(() => r.validateContactShare({ share: 'phone', phone: 'call me' }), /phone/);
+  assert.throws(() => r.validateContactShare({ share: 'phone' }), /phone/);
+  assert.throws(() => r.validateContactShare({ share: 'fax' }), /Contact choice/);
+  assert.throws(() => r.validateContactShare({}), /Contact choice/);
+});
+
+test('sellerContact only reveals the chosen detail; legacy rows get email', () => {
+  const listing = { seller_email: 's@x.edu' };
+  assert.deepEqual(r.sellerContact({ shared_contact: 'phone', seller_phone: '9876543210' }, listing), { type: 'phone', value: '9876543210' });
+  assert.deepEqual(r.sellerContact({ shared_contact: 'email' }, listing), { type: 'email', value: 's@x.edu' });
+  assert.deepEqual(r.sellerContact({ shared_contact: null }, listing), { type: 'email', value: 's@x.edu' });
+});
+
+test('unreadNotifications: approval for buyer, messages from the other side only', () => {
+  const base = { ROWID: '9', listing_title: 'Book', status: 'Accepted', buyer_id: 'b', seller_id: 's' };
+  // Buyer has not opened the chat yet: approval notification.
+  assert.deepEqual(r.unreadNotifications([base], 'b').map((n) => n.kind), ['accepted']);
+  // Seller already knows they accepted.
+  assert.deepEqual(r.unreadNotifications([base], 's'), []);
+  // New message from the other side.
+  const msg = { ...base, buyer_read_at: 100, last_message_at: 200, last_sender_id: 's' };
+  assert.deepEqual(r.unreadNotifications([msg], 'b').map((n) => n.kind), ['message']);
+  // Own message is not unread; neither is a message older than read_at.
+  assert.deepEqual(r.unreadNotifications([msg], 's'), []);
+  assert.deepEqual(r.unreadNotifications([{ ...msg, buyer_read_at: 300 }], 'b'), []);
+  // Pending/declined and strangers never notify.
+  assert.deepEqual(r.unreadNotifications([{ ...base, status: 'Pending' }], 'b'), []);
+  assert.deepEqual(r.unreadNotifications([base], 'x'), []);
+});
+
 test('searchListings filters, hides Completed by default and sorts deterministically', () => {
   const rows = [
     { ROWID: '1', CREATEDTIME: '2026-10-17 10:00:00:000', title: 'Physics textbook', description: 'HC Verma', category: 'Books', item_condition: 'Good', listing_type: 'sell', price: 200, status: 'Available' },

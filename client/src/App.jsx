@@ -6,6 +6,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Skeleton } from './components/ui/skeleton'
 import { useAuth } from './lib/auth'
 import Browse from './pages/Browse'
+import Chat from './pages/Chat'
 import Dashboard from './pages/Dashboard'
 import ListingDetail from './pages/ListingDetail'
 import Login from './pages/Login'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="listings/:id" element={<ListingDetail />} />
         <Route path="sell" element={<RequireAuth><Sell /></RequireAuth>} />
         <Route path="dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="chat/:id" element={<RequireAuth><Chat /></RequireAuth>} />
         <Route path="login" element={<Login />} />
         <Route path="smoke" element={<SmokeTest />} />
         {/* The Catalyst SDK can still redirect to the legacy /app/ path; Slate serves from root. */}

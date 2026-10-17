@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ImagePlusIcon, XIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { IconButton } from '@/components/common'
+import { AttrIcon, CATEGORY_META, CONDITION_META, EXCHANGE_META, IconButton } from '@/components/common'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -121,8 +121,8 @@ export default function Sell() {
             </Field>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <ChoiceField id="category" label="Category" placeholder="Choose a category" options={CATEGORIES} value={form.category} onChange={(v) => setValue('category', v)} invalid={missing('category')} />
-              <ChoiceField id="item_condition" label="Condition" placeholder="Choose condition" options={CONDITIONS} value={form.item_condition} onChange={(v) => setValue('item_condition', v)} invalid={missing('item_condition')} />
+              <ChoiceField id="category" label="Category" placeholder="Choose a category" options={CATEGORIES} meta={CATEGORY_META} value={form.category} onChange={(v) => setValue('category', v)} invalid={missing('category')} />
+              <ChoiceField id="item_condition" label="Condition" placeholder="Choose condition" options={CONDITIONS} meta={CONDITION_META} value={form.item_condition} onChange={(v) => setValue('item_condition', v)} invalid={missing('item_condition')} />
             </div>
 
             <Field>
@@ -151,9 +151,13 @@ export default function Sell() {
               className="grid w-full grid-cols-3"
             >
               {LISTING_TYPES.map((t) => (
-                <ToggleGroupItem key={t.value} value={t.value} size="lg" className="font-semibold">{t.label}</ToggleGroupItem>
+                <ToggleGroupItem key={t.value} value={t.value} size="lg" className="font-semibold">
+                  <AttrIcon inline meta={EXCHANGE_META[t.value]} className="size-4" />
+                  {t.label}
+                </ToggleGroupItem>
               ))}
             </ToggleGroup>
+            <FieldDescription className="-mt-2">{EXCHANGE_META[form.listing_type].hint}.</FieldDescription>
 
             {form.listing_type === 'sell' && (
               <Field>
@@ -178,7 +182,7 @@ export default function Sell() {
   )
 }
 
-function ChoiceField({ id, label, placeholder, options, value, onChange, invalid }) {
+function ChoiceField({ id, label, placeholder, options, meta, value, onChange, invalid }) {
   return (
     <Field data-invalid={invalid || undefined}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -188,11 +192,16 @@ function ChoiceField({ id, label, placeholder, options, value, onChange, invalid
         </SelectTrigger>
         <SelectContent position="popper">
           <SelectGroup>
-            {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+            {options.map((o) => (
+              <SelectItem key={o} value={o}>
+                <AttrIcon inline meta={meta[o]} className="size-4" />
+                {o}
+              </SelectItem>
+            ))}
           </SelectGroup>
         </SelectContent>
       </Select>
-      {invalid && <FieldError>Choose a {label.toLowerCase()}.</FieldError>}
+      {invalid ? <FieldError>Choose a {label.toLowerCase()}.</FieldError> : meta[value]?.hint && <FieldDescription>{meta[value].hint}.</FieldDescription>}
     </Field>
   )
 }

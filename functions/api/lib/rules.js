@@ -106,6 +106,57 @@ function validateInquiryInput(body) {
   };
 }
 
+function validateMessageInput(body) {
+  if (!body || typeof body !== 'object') throw new ValidationError('Request body is required');
+  if (typeof body.body !== 'string') throw new ValidationError('Message must be text');
+  // Keep line breaks (chat messages are multi-line); only trim the ends.
+  const text = body.body.trim();
+  if (!text) throw new ValidationError('Message cannot be empty');
+  if (text.length > 1000) throw new ValidationError('Message must be at most 1000 characters');
+  return { body: text };
+}
+
+function chatRole(inquiry, userId) {
+  if (!inquiry || !userId) return null;
+  if (String(inquiry.buyer_id) === String(userId)) return 'buyer';
+  if (String(inquiry.seller_id) === String(userId)) return 'seller';
+  return null;
+}
+
+// The seller picks what the buyer sees: email only, or a phone number they type in.
+function validateContactShare(body) {
+  const share = oneOf(body && body.share, ['email', 'phone'], 'Contact choice');
+  if (share === 'email') return { shared_contact: 'email', seller_phone: null };
+  const phone = String(body.phone || '').replace(/[\s\-()]/g, '');
+  if (!/^\+?\d{10,15}$/.test(phone)) throw new ValidationError('Enter a valid phone number');
+  return { shared_contact: 'phone', seller_phone: phone };
+}
+
+// Rows accepted before phone sharing existed have shared_contact null: they revealed the email.
+function sellerContact(inquiry, listing) {
+  if (inquiry.shared_contact === 'phone' && inquiry.seller_phone) return { type: 'phone', value: inquiry.seller_phone };
+  return { type: 'email', value: listing ? listing.seller_email : null };
+}
+
+// Unread = what the bell shows. The buyer's "accepted" item is the approval notification;
+// it clears when the buyer first opens the chat (buyer_read_at gets set).
+function unreadNotifications(inquiries, userId) {
+  const out = [];
+  for (const i of inquiries) {
+    if (i.status !== 'Accepted') continue;
+    const role = chatRole(i, userId);
+    if (!role) continue;
+    const readAt = Number(role === 'buyer' ? i.buyer_read_at : i.seller_read_at) || 0;
+    const lastAt = Number(i.last_message_at) || 0;
+    if (lastAt > readAt && String(i.last_sender_id) !== String(userId)) {
+      out.push({ inquiry_id: i.ROWID, listing_title: i.listing_title, kind: 'message', at: lastAt });
+    } else if (role === 'buyer' && !readAt) {
+      out.push({ inquiry_id: i.ROWID, listing_title: i.listing_title, kind: 'accepted', at: lastAt || null });
+    }
+  }
+  return out;
+}
+
 function validateUploadRequest(body) {
   if (!body || typeof body !== 'object') throw new ValidationError('Request body is required');
   const ext = IMAGE_TYPES[body.contentType];
@@ -171,6 +222,11 @@ module.exports = {
   isAllowedEmail,
   validateListingInput,
   validateInquiryInput,
+  validateMessageInput,
+  validateContactShare,
+  chatRole,
+  sellerContact,
+  unreadNotifications,
   validateUploadRequest,
   assertOwnerTransition,
   searchListings,

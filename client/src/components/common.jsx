@@ -1,4 +1,7 @@
-import { BedDoubleIcon, BookOpenIcon, CalculatorIcon, FlaskConicalIcon, PackageIcon, PencilLineIcon, RotateCwIcon, TriangleAlertIcon } from 'lucide-react'
+import {
+  ArrowLeftRightIcon, BadgeCheckIcon, BedDoubleIcon, BookOpenIcon, CalculatorIcon, FlaskConicalIcon, GiftIcon, IndianRupeeIcon,
+  PackageIcon, PencilLineIcon, RotateCwIcon, SparklesIcon, ThumbsUpIcon, TriangleAlertIcon, WrenchIcon,
+} from 'lucide-react'
 import { cn } from 'cn'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,7 +38,7 @@ const STATUS_HELP = {
   Reserved: 'Seller accepted a request; handover pending',
   Completed: 'Exchange done; no longer available',
   Pending: 'Waiting for the seller to respond',
-  Accepted: 'Seller accepted; contact details unlocked',
+  Accepted: 'Seller accepted; chat and contact details unlocked',
   Declined: 'Seller declined or the item went to someone else',
 }
 
@@ -72,21 +75,46 @@ export function ErrorState({ message, onRetry, className }) {
   )
 }
 
-const CATEGORY_ICON = {
-  Books: BookOpenIcon,
-  'Calculators & Electronics': CalculatorIcon,
-  'Lab Supplies': FlaskConicalIcon,
-  Stationery: PencilLineIcon,
-  'Hostel Essentials': BedDoubleIcon,
-  Other: PackageIcon,
+// Full class strings (not built from parts) so Tailwind's scanner keeps them. Icons sit at -700 on -50
+// for 3:1+ contrast. Condition runs green to orange as wear increases.
+export const CONDITION_META = {
+  New: { icon: SparklesIcon, tone: 'bg-emerald-50 text-emerald-700', hint: 'Unused, as it came from the shop' },
+  'Like New': { icon: BadgeCheckIcon, tone: 'bg-lime-50 text-lime-700', hint: 'Used a few times, no visible wear' },
+  Good: { icon: ThumbsUpIcon, tone: 'bg-amber-50 text-amber-700', hint: 'Normal signs of use, works fully' },
+  Fair: { icon: WrenchIcon, tone: 'bg-orange-50 text-orange-700', hint: 'Heavy wear or small defects, still usable' },
+}
+export const EXCHANGE_META = {
+  sell: { icon: IndianRupeeIcon, tone: 'bg-blue-50 text-ink-900', hint: 'Pay the seller the listed price' },
+  swap: { icon: ArrowLeftRightIcon, tone: 'bg-grape-50 text-grape-700', hint: 'Trade something of yours for it' },
+  free: { icon: GiftIcon, tone: 'bg-rose-50 text-rose-700', hint: 'Given away at no cost' },
+}
+export const CATEGORY_META = {
+  Books: { icon: BookOpenIcon, tone: 'bg-sky-50 text-sky-700' },
+  'Calculators & Electronics': { icon: CalculatorIcon, tone: 'bg-indigo-50 text-indigo-700' },
+  'Lab Supplies': { icon: FlaskConicalIcon, tone: 'bg-teal-50 text-teal-700' },
+  Stationery: { icon: PencilLineIcon, tone: 'bg-fuchsia-50 text-fuchsia-700' },
+  'Hostel Essentials': { icon: BedDoubleIcon, tone: 'bg-cyan-50 text-cyan-700' },
+  Other: { icon: PackageIcon, tone: 'bg-slate-100 text-slate-700' },
+}
+const FALLBACK_META = CATEGORY_META.Other
+
+// Rounded colored tile holding a listing attribute's icon; `inline` drops the tile for dense rows.
+export function AttrIcon({ meta = FALLBACK_META, inline = false, className }) {
+  const Icon = meta.icon
+  if (inline) return <Icon aria-hidden="true" className={cn('size-3.5 shrink-0 bg-transparent', meta.tone, className)} />
+  return (
+    <span aria-hidden="true" className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-current/15 ring-inset', meta.tone, className)}>
+      <Icon className="size-[18px]" />
+    </span>
+  )
 }
 
-// Placeholder when a listing has no photo or the image fails.
+// Placeholder when a listing has no photo or the image fails; tinted per category.
 export function CategoryArt({ category, className }) {
-  const Icon = CATEGORY_ICON[category] ?? PackageIcon
+  const { icon: Icon, tone } = CATEGORY_META[category] ?? FALLBACK_META
   return (
-    <div className={cn('flex items-center justify-center bg-gradient-to-br from-brand-50 to-secondary', className)}>
-      <Icon className="size-12 text-brand-700/50" strokeWidth={1.5} aria-hidden="true" />
+    <div className={cn('flex items-center justify-center bg-gradient-to-br from-white/0 to-white/70', tone, className)}>
+      <Icon className="size-12 opacity-45" strokeWidth={1.5} aria-hidden="true" />
     </div>
   )
 }

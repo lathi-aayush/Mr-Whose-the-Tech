@@ -75,6 +75,38 @@ function publicListing(l) {
   return rest;
 }
 
+// Buyers get only the contact detail the seller chose; the raw phone/email columns never leave the server.
+function clientInquiry(inquiry, listing) {
+  const { seller_phone, shared_contact, ...rest } = inquiry;
+  if (inquiry.status !== 'Accepted') return rest;
+  return { ...rest, seller_contact: rules.sellerContact(inquiry, listing) };
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Best-effort: the accept is already saved, so a mail failure (unverified sender, quota) must not undo it.
+async function emailBuyerAccepted(admin, inquiry, listing, contact) {
+  try {
+    const link = `${env('APP_URL').replace(/\/$/, '')}/chat/${inquiry.ROWID}`;
+    const title = escapeHtml(listing.title);
+    await admin.email().sendMail({
+      from_email: env('MAIL_FROM'),
+      to_email: [inquiry.buyer_email],
+      subject: `Your request for "${listing.title}" was accepted`,
+      html_mode: true,
+      content:
+        `<p>Hi ${escapeHtml(inquiry.buyer_name)},</p>` +
+        `<p>${escapeHtml(listing.seller_name)} accepted your request for <b>${title}</b>.</p>` +
+        `<p>${contact.type === 'phone' ? 'Phone' : 'Email'}: <b>${escapeHtml(contact.value)}</b></p>` +
+        `<p><a href="${escapeHtml(link)}">Open the chat</a> to arrange the handover.</p>`,
+    });
+  } catch (err) {
+    console.error('Accepted-email failed', err && err.message);
+  }
+}
+
 const routes = [];
 function route(method, pattern, handler) {
   const keys = [];
@@ -187,13 +219,9 @@ route('POST', '/listings/:id/inquiries', async ({ req, body, store, params }) =>
 route('GET', '/me/inquiries', async ({ req, store }) => {
   const user = await requireUser(req);
   const sent = await store.inquiriesByBuyer(user.id);
-  // Reveal seller contact only after acceptance.
+  // Reveal seller contact only after acceptance, and only what the seller chose to share.
   const withContact = await Promise.all(
-    sent.map(async (i) => {
-      if (i.status !== 'Accepted') return i;
-      const listing = await store.getListing(i.listing_id);
-      return { ...i, seller_email: listing ? listing.seller_email : null };
-    }),
+    sent.map(async (i) => clientInquiry(i, i.status === 'Accepted' ? await store.getListing(i.listing_id) : null)),
   );
   return { inquiries: withContact };
 });
@@ -203,7 +231,68 @@ route('GET', '/me/received', async ({ req, store }) => {
   return { inquiries: await store.inquiriesForSeller(user.id) };
 });
 
-route('PATCH', '/inquiries/:id', async ({ req, body, store, params }) => {
+route('GET', '/me/notifications', async ({ req, store }) => {
+  const user = await requireUser(req);
+  const [sent, received] = await Promise.all([store.inquiriesByBuyer(user.id), store.inquiriesForSeller(user.id)]);
+  return { items: rules.unreadNotifications([...sent, ...received], user.id) };
+});
+
+// Shared by the chat routes: loads the inquiry and checks the caller is its buyer or seller.
+async function loadChat(store, user, inquiryId) {
+  const inquiry = await store.getInquiry(inquiryId);
+  if (!inquiry) throw new ValidationError('Request not found', 404);
+  const role = rules.chatRole(inquiry, user.id);
+  if (!role) throw new ValidationError('This chat is only for the buyer and seller', 403);
+  return { inquiry, role };
+}
+
+route('GET', '/inquiries/:id/messages', async ({ req, store, params, query }) => {
+  const user = await requireUser(req);
+  const { inquiry, role } = await loadChat(store, user, params.id);
+  if (inquiry.status === 'Pending') throw new ValidationError('Chat unlocks when the seller accepts the request', 409);
+  const listing = await store.getListing(inquiry.listing_id);
+  const messages = await store.messagesForInquiry(inquiry.ROWID, query.after);
+
+  // Mark read only when something is unread, so 4s polling doesn't write every time.
+  const readKey = `${role}_read_at`;
+  const readAt = Number(inquiry[readKey]) || 0;
+  if (!readAt || Number(inquiry.last_message_at) > readAt) {
+    await store.updateInquiry(inquiry.ROWID, { [readKey]: Date.now() });
+  }
+
+  const open = inquiry.status === 'Accepted';
+  let contact = null;
+  if (open) contact = role === 'buyer' ? rules.sellerContact(inquiry, listing) : { type: 'email', value: inquiry.buyer_email };
+  return {
+    role,
+    canSend: open,
+    status: inquiry.status,
+    listing: listing ? { ROWID: listing.ROWID, title: listing.title, image_urls: listing.image_urls, category: listing.category } : null,
+    counterpart: role === 'buyer' ? (listing ? listing.seller_name : 'Seller') : inquiry.buyer_name,
+    contact,
+    me: user.id,
+    messages,
+  };
+});
+
+route('POST', '/inquiries/:id/messages', async ({ req, body, store, params }) => {
+  const user = await requireUser(req);
+  const { inquiry, role } = await loadChat(store, user, params.id);
+  const input = rules.validateMessageInput(body);
+  if (inquiry.status !== 'Accepted') throw new ValidationError('This chat is closed', 409);
+  const now = Date.now();
+  const message = await store.createMessage({
+    inquiry_id: inquiry.ROWID,
+    sender_id: user.id,
+    sender_name: user.name,
+    body: input.body,
+    sent_at: now,
+  });
+  await store.updateInquiry(inquiry.ROWID, { last_message_at: now, last_sender_id: user.id, [`${role}_read_at`]: now });
+  return { message };
+});
+
+route('PATCH', '/inquiries/:id', async ({ req, body, store, params, admin }) => {
   const user = await requireUser(req);
   const action = body.action;
   if (action !== 'accept' && action !== 'decline') throw new ValidationError('Action must be accept or decline');
@@ -219,14 +308,17 @@ route('PATCH', '/inquiries/:id', async ({ req, body, store, params }) => {
   }
 
   if (listing.status !== 'Available') throw new ValidationError(`Listing is already ${listing.status.toLowerCase()}`, 409);
+  // Validate before any write: a bad phone number must not leave the item reserved.
+  const share = rules.validateContactShare(body);
   // ponytail: no transactions in ZCQL, so these writes aren't atomic. Order is chosen so a
   // partial failure leaves the listing Reserved with its buyer accepted (the safe state).
   await store.updateListingStatus(listing.ROWID, 'Reserved');
-  await store.updateInquiryStatus(inquiry.ROWID, 'Accepted');
+  await store.updateInquiry(inquiry.ROWID, { status: 'Accepted', ...share });
   const others = (await store.inquiriesForListing(listing.ROWID)).filter(
     (i) => i.status === 'Pending' && i.ROWID !== inquiry.ROWID,
   );
   await Promise.all(others.map((i) => store.updateInquiryStatus(i.ROWID, 'Declined')));
+  await emailBuyerAccepted(admin, inquiry, listing, rules.sellerContact({ ...inquiry, ...share }, listing));
   return { status: 'Accepted', listingStatus: 'Reserved', declined: others.length };
 });
 

@@ -36,6 +36,7 @@ function createStore(adminApp) {
   const zcql = adminApp.zcql();
   const listings = adminApp.datastore().table('Listings');
   const inquiries = adminApp.datastore().table('Inquiries');
+  const messages = adminApp.datastore().table('Messages');
 
   async function query(sql, table) {
     const rows = await zcql.executeZCQLQuery(sql);
@@ -102,8 +103,25 @@ function createStore(adminApp) {
       return inquiries.insertRow(data);
     },
 
+    async updateInquiry(inquiryId, fields) {
+      return inquiries.updateRow({ ...fields, ROWID: id(inquiryId) });
+    },
+
     async updateInquiryStatus(inquiryId, status) {
-      return inquiries.updateRow({ ROWID: id(inquiryId), status });
+      return this.updateInquiry(inquiryId, { status });
+    },
+
+    // sent_at is epoch ms; Number() keeps a hostile ?after= out of the SQL.
+    async messagesForInquiry(inquiryId, afterMs = 0) {
+      const after = Number.isFinite(Number(afterMs)) ? Math.max(0, Math.floor(Number(afterMs))) : 0;
+      return scan(
+        `SELECT * FROM Messages WHERE inquiry_id = ${id(inquiryId)} AND sent_at > ${after} ORDER BY sent_at ASC`,
+        'Messages',
+      );
+    },
+
+    async createMessage(data) {
+      return messages.insertRow(data);
     },
   };
 }

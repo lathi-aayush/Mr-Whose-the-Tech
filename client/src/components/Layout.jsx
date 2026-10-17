@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { InboxIcon, LogOutIcon, PackageIcon, PlusIcon, SearchIcon, SendIcon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { BellIcon, CheckCheckIcon, InboxIcon, LogOutIcon, MessageCircleIcon, PackageIcon, PlusIcon, SearchIcon, SendIcon } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +16,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { DEMO_OPEN_SIGNUP } from '@/lib/constants'
 
@@ -47,7 +49,10 @@ export function Layout() {
             {user === undefined ? (
               <Skeleton className="size-10 rounded-full" />
             ) : user ? (
-              <AccountMenu user={user} />
+              <>
+                <NotificationsMenu />
+                <AccountMenu user={user} />
+              </>
             ) : (
               <Button variant="outline" asChild>
                 <Link to="/login">Sign in</Link>
@@ -139,6 +144,95 @@ function HeaderSearch() {
         </InputGroupAddon>
       </InputGroup>
     </form>
+  )
+}
+
+const NOTIFY_POLL_MS = 30000
+
+// ponytail: polls every 30s (and on focus / route change). Upgrade path: Catalyst Signals push.
+function NotificationsMenu() {
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const [items, setItems] = useState([])
+  // null until the first fetch, so reloading the page doesn't toast old approvals again.
+  const seenAccepted = useRef(null)
+
+  const refresh = useCallback(async () => {
+    if (document.visibilityState !== 'visible') return
+    try {
+      const data = await api('/me/notifications')
+      setItems(data.items)
+      const accepted = data.items.filter((n) => n.kind === 'accepted')
+      if (seenAccepted.current) {
+        for (const n of accepted.filter((a) => !seenAccepted.current.has(a.inquiry_id))) {
+          toast.success(`Seller accepted your request for ${n.listing_title}`, {
+            action: { label: 'Open chat', onClick: () => navigate(`/chat/${n.inquiry_id}`) },
+          })
+        }
+      }
+      seenAccepted.current = new Set(accepted.map((a) => a.inquiry_id))
+    } catch {
+      // Bell is a convenience; keep the last known list and retry next tick.
+    }
+  }, [navigate])
+
+  useEffect(() => {
+    const timer = setInterval(refresh, NOTIFY_POLL_MS)
+    window.addEventListener('focus', refresh)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [refresh])
+
+  // Delay lets a just-opened chat mark itself read before we ask what's still unread.
+  useEffect(() => {
+    const t = setTimeout(refresh, pathname.startsWith('/chat/') ? 1500 : 0)
+    return () => clearTimeout(t)
+  }, [pathname, refresh])
+
+  return (
+    <DropdownMenu modal={false}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="relative rounded-full" aria-label={items.length ? `Notifications, ${items.length} unread` : 'Notifications'}>
+              <BellIcon />
+              {items.length > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white" aria-hidden="true">
+                  {items.length > 9 ? '9+' : items.length}
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Notifications</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-80">
+        <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {items.length === 0 ? (
+          <p className="flex items-center gap-2 px-2 py-3 text-sm text-muted-foreground">
+            <CheckCheckIcon className="size-4" aria-hidden="true" />
+            You're all caught up
+          </p>
+        ) : (
+          <DropdownMenuGroup>
+            {items.map((n) => (
+              <DropdownMenuItem key={`${n.kind}-${n.inquiry_id}`} asChild>
+                <Link to={`/chat/${n.inquiry_id}`} className="items-start">
+                  <MessageCircleIcon />
+                  <span className="min-w-0 whitespace-normal">
+                    {n.kind === 'accepted' ? 'Seller accepted your request for ' : 'New message about '}
+                    <span className="font-semibold">{n.listing_title}</span>
+                  </span>
+                </Link>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
