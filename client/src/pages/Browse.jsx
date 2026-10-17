@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import { getCachedListings, setCachedListings } from '@/lib/listingsCache'
 import { CATEGORIES, CONDITIONS, LISTING_TYPES, SORTS, STATUSES, parseCatalystTime } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 
@@ -80,10 +81,13 @@ export default function Browse() {
 
   // ponytail: one fetch, then filter in the browser so every click is instant. Fine up to the
   // server's 900-row scan; past that, move facets back to the API.
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const cached = force ? null : getCachedListings()
+    if (cached) return setState({ loading: false, error: null, listings: cached })
     setState((s) => ({ ...s, loading: true, error: null }))
     try {
       const { listings } = await api('/listings?status=all')
+      setCachedListings(listings)
       setState({ loading: false, error: null, listings })
     } catch (e) {
       setState({ loading: false, error: e.message, listings: [] })
@@ -191,7 +195,7 @@ export default function Browse() {
           )}
 
           {state.error ? (
-            <ErrorState message={state.error} onRetry={load} className="min-h-72" />
+            <ErrorState message={state.error} onRetry={() => load(true)} className="min-h-72" />
           ) : state.loading ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4" aria-busy="true" aria-label="Loading listings">
               {Array.from({ length: 8 }, (_, i) => <ListingCardSkeleton key={i} />)}

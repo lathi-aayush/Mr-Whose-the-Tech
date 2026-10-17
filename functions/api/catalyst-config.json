@@ -4,6 +4,7 @@
 		"stack": "node20",
 		"type": "advancedio",
 		"env_variables": {
+			"DEBUG_ERRORS": "1",
 			"ALLOWED_EMAIL_DOMAINS": "*",
 			"APP_URL": "https://campussibling-wnfeccgs.onslate.in",
 			"AUTH_ZAID": "50046959265",

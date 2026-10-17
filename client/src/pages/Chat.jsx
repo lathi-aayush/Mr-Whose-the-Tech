@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeftIcon, LockIcon, MailIcon, PhoneIcon, SendHorizontalIcon } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowLeftIcon, CheckCheckIcon, LockIcon, MailIcon, PhoneIcon, SendHorizontalIcon } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from 'cn'
 import { CategoryArt, ErrorState, IconButton, StatusBadge } from '@/components/common'
@@ -8,19 +8,31 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { canPoll, onWake } from '@/lib/activity'
 import { api } from '@/lib/api'
-import { timeAgoMs } from '@/lib/constants'
+import { formatPrice } from '@/lib/constants'
 
-// ponytail: polling, not websockets. Advanced I/O functions are stateless request/response.
-// Upgrade path: Catalyst Signals or an AppSail websocket if 3s latency stops being enough.
-const POLL_MS = 3000
-const TYPING_PING_MS = 2500
+// ponytail: polling, not websockets. Advanced I/O functions are stateless request/response, and every
+// poll is 2 Data Store fetches against a 10,000/month free quota. So: 5s after any activity, doubling
+// to 30s while quiet, nothing while the tab is hidden or idle.
+// Upgrade path: Catalyst Signals or an AppSail websocket (would also bring back online/typing).
+const POLL_MIN_MS = 5000
+const POLL_MAX_MS = 30000
+
+function dayLabel(ms) {
+  const d = new Date(Number(ms))
+  const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (d.toDateString() === now.toDateString()) return 'Today'
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' })
+}
 
 const clock = (ms) => new Date(Number(ms)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
 // Fills its parent's height: header, scrolling messages, composer. The parent decides the size.
-export function ChatPanel({ id, onBack }) {
+export function ChatPanel({ id, onBack, onActivity }) {
   const [state, setState] = useState({ loading: true, error: null, meta: null })
   const [peer, setPeer] = useState(null)
   const [messages, setMessages] = useState([])
@@ -28,8 +40,12 @@ export function ChatPanel({ id, onBack }) {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState(null)
   const lastRef = useRef(0)
-  const typingSentRef = useRef(0)
   const listRef = useRef(null)
+  const delayRef = useRef(POLL_MIN_MS)
+  const wakeRef = useRef(() => {})
+  // Latest callback without restarting the poll effect when the parent re-renders.
+  const activityRef = useRef(onActivity)
+  activityRef.current = onActivity
 
   // Dedupe by ROWID: a sent message can arrive from both the POST response and the next poll.
   const merge = useCallback((incoming) => {
@@ -42,9 +58,9 @@ export function ChatPanel({ id, onBack }) {
     })
   }, [])
 
-  // Only re-render when presence actually changes, so idle polls cost nothing.
+  // Only re-render when the peer's read mark moves, so idle polls cost nothing.
   const applyPeer = useCallback((next) => {
-    setPeer((p) => (p && p.online === next.online && p.typing === next.typing && p.seenAt === next.seenAt ? p : next))
+    setPeer((p) => (p && p.readAt === next.readAt ? p : next))
   }, [])
 
   const load = useCallback(async () => {
@@ -70,41 +86,55 @@ export function ChatPanel({ id, onBack }) {
   useEffect(() => {
     if (!ready) return
     let stop = false
-    const tick = async () => {
-      if (document.visibilityState !== 'visible') return
-      try {
-        const { messages: msgs, peer: p, ...meta } = await api(`/inquiries/${id}/messages?after=${lastRef.current}`)
-        if (stop) return
-        merge(msgs)
-        applyPeer(p)
-        // Only touch meta when the chat opens/closes.
-        setState((s) => (s.meta && s.meta.canSend === meta.canSend ? s : { ...s, meta }))
-      } catch {
-        // Transient network error: the next tick retries.
-      }
+    let busy = false
+    let timer
+    const schedule = () => {
+      clearTimeout(timer)
+      if (!stop) timer = setTimeout(tick, delayRef.current)
     }
-    const timer = setInterval(tick, POLL_MS)
-    document.addEventListener('visibilitychange', tick)
+    async function tick() {
+      if (busy) return
+      if (canPoll()) {
+        busy = true
+        try {
+          // Ticks return only canSend/status/peer/messages; the header meta came with the first load.
+          const { messages: msgs, peer: p, canSend, status } = await api(`/inquiries/${id}/messages?after=${lastRef.current}`)
+          if (stop) return
+          merge(msgs)
+          applyPeer(p)
+          setState((s) => (s.meta.canSend === canSend && s.meta.status === status ? s : { ...s, meta: { ...s.meta, canSend, status } }))
+          if (msgs.length) activityRef.current?.()
+          delayRef.current = msgs.length ? POLL_MIN_MS : Math.min(delayRef.current * 2, POLL_MAX_MS)
+        } catch {
+          // Transient network error: the next tick retries.
+        } finally {
+          busy = false
+        }
+      }
+      schedule()
+    }
+    // After sending, expect a reply soon: go back to the fast interval without polling right now.
+    wakeRef.current = () => {
+      delayRef.current = POLL_MIN_MS
+      schedule()
+    }
+    const off = onWake(() => {
+      delayRef.current = POLL_MIN_MS
+      clearTimeout(timer)
+      tick()
+    })
+    schedule()
     return () => {
       stop = true
-      clearInterval(timer)
-      document.removeEventListener('visibilitychange', tick)
+      clearTimeout(timer)
+      off()
     }
   }, [id, ready, merge, applyPeer])
 
   useEffect(() => {
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages.length, ready, peer?.typing])
-
-  function onDraftChange(value) {
-    setDraft(value)
-    const now = Date.now()
-    if (value.trim() && now - typingSentRef.current > TYPING_PING_MS) {
-      typingSentRef.current = now
-      api(`/inquiries/${id}/typing`, { method: 'POST', body: {} }).catch(() => {}) // best-effort signal
-    }
-  }
+  }, [messages.length, ready])
 
   async function send() {
     const text = draft.trim()
@@ -115,7 +145,8 @@ export function ChatPanel({ id, onBack }) {
       const { message } = await api(`/inquiries/${id}/messages`, { method: 'POST', body: { body: text } })
       merge([message])
       setDraft('')
-      typingSentRef.current = 0
+      wakeRef.current()
+      activityRef.current?.()
     } catch (e) {
       setSendError(e.message)
     } finally {
@@ -129,68 +160,84 @@ export function ChatPanel({ id, onBack }) {
   const { meta } = state
   const cover = meta.listing?.image_urls?.[0]
   const ContactIcon = meta.contact?.type === 'phone' ? PhoneIcon : MailIcon
+  const lastMine = messages.findLast((m) => String(m.sender_id) === String(meta.me))
 
   return (
     <div className="fade-in flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-3 border-b p-3">
+      <header className="flex items-center gap-3 border-b px-4 py-3">
         {onBack && (
           <IconButton label="Back to requests" shortcut="Esc" size="icon-sm" onClick={onBack} className="lg:hidden">
             <ArrowLeftIcon />
           </IconButton>
         )}
-        <Avatar size="lg">
-          <AvatarFallback className="bg-ink-900 font-semibold text-white">{meta.counterpart?.[0]?.toUpperCase() ?? '?'}</AvatarFallback>
+        <Avatar className="size-11">
+          <AvatarFallback className="bg-ink-900 text-base font-semibold text-white">{meta.counterpart?.[0]?.toUpperCase() ?? '?'}</AvatarFallback>
         </Avatar>
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate font-semibold">{meta.counterpart}</span>
-          <PresenceLine peer={peer} />
+          <span className="truncate text-base leading-tight font-semibold">{meta.counterpart}</span>
+          <span className="text-xs text-muted-foreground">{meta.role === 'buyer' ? 'Seller' : 'Buyer'}</span>
         </div>
-        <div className="hidden size-10 shrink-0 overflow-hidden rounded-md bg-muted sm:block">
-          {cover ? <img src={cover} alt="" className="size-full object-cover" /> : <CategoryArt category={meta.listing?.category} className="size-full" />}
-        </div>
-        <StatusBadge status={meta.status} />
       </header>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/40 px-3 py-2 text-sm">
-        {meta.listing ? (
-          <Link to={`/listings/${meta.listing.ROWID}`} className="min-w-0 truncate font-medium underline-offset-4 hover:underline" title={meta.listing.title}>
-            {meta.listing.title}
-          </Link>
-        ) : (
-          <span className="font-medium">Listing removed</span>
-        )}
-        {meta.contact?.value && (
-          <span className="flex items-center gap-1 text-muted-foreground">
-            <ContactIcon className="size-3.5" aria-hidden="true" />
-            <a href={`${meta.contact.type === 'phone' ? 'tel' : 'mailto'}:${meta.contact.value}`} className="underline underline-offset-4">{meta.contact.value}</a>
-          </span>
-        )}
+      {/* The item stays pinned above the conversation: photo, price, status, and the contact the seller chose to share. */}
+      <div className="flex items-center gap-3 border-b bg-card px-4 py-3">
+        <div className="size-12 shrink-0 overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/10">
+          {cover ? <img src={cover} alt="" className="size-full object-cover" /> : <CategoryArt category={meta.listing?.category} className="size-full" />}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {meta.listing ? (
+            <Link to={`/listings/${meta.listing.ROWID}`} className="truncate font-semibold underline-offset-4 hover:underline" title={meta.listing.title}>
+              {meta.listing.title}
+            </Link>
+          ) : (
+            <span className="font-semibold">Listing removed</span>
+          )}
+          <div className="flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
+            {meta.listing?.listing_type && <span className="font-semibold text-foreground">{formatPrice(meta.listing)}</span>}
+            {meta.contact?.value && (
+              <span className="flex min-w-0 items-center gap-1">
+                <ContactIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                <a href={`${meta.contact.type === 'phone' ? 'tel' : 'mailto'}:${meta.contact.value}`} className="truncate underline underline-offset-4">{meta.contact.value}</a>
+              </span>
+            )}
+          </div>
+        </div>
+        <StatusBadge status={meta.status} />
       </div>
 
       {meta.swap && <SwapOffer swap={meta.swap} />}
 
-      <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-4" role="log" aria-live="polite" aria-label="Messages">
+      <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto bg-muted/40 px-4 py-4" role="log" aria-live="polite" aria-label="Messages">
         {messages.length === 0 && (
-          <p className="m-auto text-center text-sm text-muted-foreground">
+          <p className="m-auto max-w-64 text-center text-sm text-muted-foreground">
             {meta.canSend ? `Say hi to ${meta.counterpart} and arrange the handover.` : 'No messages.'}
           </p>
         )}
-        {messages.map((m) => {
+        {messages.map((m, i) => {
           const mine = String(m.sender_id) === String(meta.me)
+          const seen = m === lastMine && !!peer?.readAt && peer.readAt >= Number(m.sent_at)
+          const day = dayLabel(m.sent_at)
+          const newDay = i === 0 || day !== dayLabel(messages[i - 1].sent_at)
+          const newSender = i > 0 && !newDay && messages[i - 1].sender_id !== m.sender_id
           return (
-            <div key={m.ROWID} className={cn('flex max-w-[80%] flex-col gap-0.5', mine ? 'items-end self-end' : 'items-start self-start')}>
-              <p className={cn('rounded-2xl px-3 py-2 break-words whitespace-pre-wrap', mine ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm bg-muted')}>
-                {m.body}
-              </p>
-              <span className="px-1 text-xs text-muted-foreground">{mine ? 'You' : m.sender_name} · {clock(m.sent_at)}</span>
-            </div>
+            <Fragment key={m.ROWID}>
+              {newDay && (
+                <div className="my-2 flex justify-center">
+                  <span className="rounded-full bg-background px-3 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-foreground/10">{day}</span>
+                </div>
+              )}
+              <div className={cn('flex max-w-[78%] flex-col gap-0.5', mine ? 'items-end self-end' : 'items-start self-start', newSender && 'mt-2')}>
+                <p className={cn('rounded-2xl px-3.5 py-2 break-words whitespace-pre-wrap shadow-xs', mine ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md bg-card ring-1 ring-foreground/10')}>
+                  {m.body}
+                </p>
+                <span className="px-1 text-[11px] text-muted-foreground">
+                  {clock(m.sent_at)}
+                  {seen && <> · <CheckCheckIcon className="inline size-3.5 text-brand-700" aria-hidden="true" /> Seen</>}
+                </span>
+              </div>
+            </Fragment>
           )
         })}
-      </div>
-
-      {/* Fixed height so the composer doesn't jump when "typing…" appears. */}
-      <div className="h-6 shrink-0 px-4 text-xs text-muted-foreground" aria-live="polite">
-        {peer?.typing && meta.canSend && <TypingDots name={meta.counterpart} />}
       </div>
 
       {meta.canSend ? (
@@ -199,32 +246,32 @@ export function ChatPanel({ id, onBack }) {
             e.preventDefault()
             send()
           }}
-          className="flex shrink-0 flex-col gap-2 border-t p-3"
+          className="shrink-0 border-t bg-card p-3"
         >
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 rounded-2xl border bg-background p-1.5 pl-4 transition focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
             <Textarea
               value={draft}
-              onChange={(e) => onDraftChange(e.target.value)}
+              onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
                   send()
                 }
               }}
-              rows={2}
+              rows={1}
               maxLength={1000}
               placeholder="Write a message…"
               aria-label="Message"
-              className="min-h-14 flex-1 resize-none"
+              className="max-h-32 min-h-10 flex-1 resize-none rounded-none border-0 bg-transparent px-0 py-2 shadow-none focus-visible:border-0 focus-visible:ring-0"
             />
-            <IconButton label="Send message" shortcut="Enter" variant="default" size="icon-lg" type="submit" disabled={sending || !draft.trim()}>
+            <IconButton label="Send message" shortcut="Enter" variant="default" size="icon" type="submit" disabled={sending || !draft.trim()} className="rounded-xl">
               {sending ? <Spinner /> : <SendHorizontalIcon />}
             </IconButton>
           </div>
-          {sendError && <p role="alert" className="text-sm text-destructive">{sendError}</p>}
+          {sendError && <p role="alert" className="mt-2 text-sm text-destructive">{sendError}</p>}
         </form>
       ) : (
-        <div className="shrink-0 border-t p-3">
+        <div className="shrink-0 border-t bg-card p-3">
           <Alert>
             <LockIcon />
             <AlertDescription>Chat closed: this request is no longer active.</AlertDescription>
@@ -232,35 +279,6 @@ export function ChatPanel({ id, onBack }) {
         </div>
       )}
     </div>
-  )
-}
-
-function PresenceLine({ peer }) {
-  const online = !!peer?.online
-  const label = online ? 'Online' : peer?.seenAt ? `Last seen ${timeAgoMs(peer.seenAt)}` : 'Offline'
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span tabIndex={0} className="flex w-fit items-center gap-1.5 text-xs text-muted-foreground">
-          <span className={cn('size-2 rounded-full', online ? 'bg-emerald-500' : 'bg-muted-foreground/40')} aria-hidden="true" />
-          {label}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{online ? 'Has this chat open right now' : 'Not in this chat right now'}</TooltipContent>
-    </Tooltip>
-  )
-}
-
-function TypingDots({ name }) {
-  return (
-    <span className="fade-in flex items-center gap-1.5">
-      <span className="flex gap-0.5" aria-hidden="true">
-        {[0, 1, 2].map((i) => (
-          <span key={i} className="size-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: `${i * 150}ms` }} />
-        ))}
-      </span>
-      {name} is typing…
-    </span>
   )
 }
 
@@ -286,28 +304,33 @@ export function SwapOffer({ swap, className }) {
   )
 }
 
-// Same header, list and composer heights as the loaded panel.
+// Same header, product card, message area and composer heights as the loaded panel.
 function ChatSkeleton() {
   return (
     <div className="flex h-full min-h-0 flex-col" aria-busy="true" aria-label="Loading chat">
-      <div className="flex items-center gap-3 border-b p-3">
-        <Skeleton className="size-10 rounded-full" />
+      <div className="flex items-center gap-3 border-b px-4 py-3">
+        <Skeleton className="size-11 rounded-full" />
         <div className="flex flex-1 flex-col gap-1">
           <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-14" />
+        </div>
+      </div>
+      <div className="flex items-center gap-3 border-b px-4 py-3">
+        <Skeleton className="size-12 rounded-lg" />
+        <div className="flex flex-1 flex-col gap-1">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-5 w-32" />
         </div>
         <Skeleton className="h-5 w-16 rounded-full" />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden bg-muted/40 p-4">
         <Skeleton className="h-10 w-2/3 self-start rounded-2xl" />
         <Skeleton className="h-10 w-1/2 self-end rounded-2xl" />
         <Skeleton className="h-10 w-3/5 self-start rounded-2xl" />
         <Skeleton className="h-10 w-2/5 self-end rounded-2xl" />
       </div>
-      <div className="h-6 shrink-0" />
-      <div className="flex shrink-0 items-end gap-2 border-t p-3">
-        <Skeleton className="h-14 flex-1 rounded-lg" />
-        <Skeleton className="size-11 rounded-lg" />
+      <div className="shrink-0 border-t p-3">
+        <Skeleton className="h-[54px] w-full rounded-2xl" />
       </div>
     </div>
   )

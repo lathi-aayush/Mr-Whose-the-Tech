@@ -116,16 +116,6 @@ function validateInquiryInput(body, ownPrefix) {
   return inquiry;
 }
 
-// Peer is "online" while their chat poll (every 3s) keeps refreshing seenAt.
-function presenceState(peer, now = Date.now()) {
-  const seenAt = Number(peer && peer.seenAt) || null;
-  const typingAt = Number(peer && peer.typingAt) || 0;
-  return {
-    online: !!seenAt && now - seenAt < 10000,
-    typing: !!typingAt && now - typingAt < 5000,
-    seenAt,
-  };
-}
 
 function validateMessageInput(body) {
   if (!body || typeof body !== 'object') throw new ValidationError('Request body is required');
@@ -260,7 +250,6 @@ module.exports = {
   chatRole,
   sellerContact,
   unreadNotifications,
-  presenceState,
   validateUploadRequest,
   assertOwnerTransition,
   searchListings,

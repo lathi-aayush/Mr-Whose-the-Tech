@@ -1,4 +1,5 @@
 import { getAuthToken } from './catalyst'
+import { clearListingsCache } from './listingsCache'
 
 const API_BASE = import.meta.env.VITE_API_BASE
 if (!API_BASE) throw new Error('VITE_API_BASE is not set (see client/.env.example)')
@@ -11,6 +12,7 @@ export class ApiError extends Error {
 }
 
 export async function api(path, { method = 'GET', body } = {}) {
+  if (method !== 'GET') clearListingsCache()
   const headers = { 'Content-Type': 'application/json' }
   const token = await getAuthToken()
   if (token) headers.Authorization = token

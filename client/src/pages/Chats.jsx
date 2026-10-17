@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
-import { ArrowLeftIcon, MessageCircleIcon, MessagesSquareIcon } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { ArrowLeftIcon, MessageCircleIcon, MessagesSquareIcon, SearchIcon } from 'lucide-react'
+import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { cn } from 'cn'
 import { toast } from 'sonner'
 import { ErrorState, IconButton, StatusBadge } from '@/components/common'
@@ -16,13 +16,15 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { onWake } from '@/lib/activity'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { OFFER_LABELS, parseCatalystTime, timeAgo, timeAgoMs } from '@/lib/constants'
 import { ChatPanel, SwapOffer } from '@/pages/Chat'
 
-// ponytail: polled list so new messages bubble up like a messaging app. Upgrade path: Catalyst Signals push.
-const REFRESH_MS = 6000
+// No timer here: the list reloads (2 Data Store fetches) only when Layout's shared notifications poll
+// reports something new, when you return to the tab, or when the open chat sends/receives.
+// ponytail: declines and other silent status changes show up on the next focus. Upgrade path: Signals.
 // Only Accepted requests can chat; the other groups show the request itself.
 const GROUPS = [
   { status: 'Accepted', label: 'Accepted' },
@@ -60,6 +62,7 @@ export default function Chats() {
   // ROWID -> when this client last had the chat open. The server marks a chat read when it opens;
   // this clears the badge immediately, and only hides messages older than that moment.
   const [opened, setOpened] = useState(() => new Map())
+  const [q, setQ] = useState('')
 
   // Both lists in one: requests I received (I'm selling) and requests I sent (I'm buying).
   const load = useCallback(async ({ silent = false } = {}) => {
@@ -79,14 +82,17 @@ export default function Chats() {
 
   useEffect(() => {
     load()
-    const refresh = () => document.visibilityState === 'visible' && load({ silent: true })
-    const timer = setInterval(refresh, REFRESH_MS)
-    window.addEventListener('focus', refresh)
-    return () => {
-      clearInterval(timer)
-      window.removeEventListener('focus', refresh)
-    }
+    return onWake(() => load({ silent: true }))
   }, [load])
+
+  const notifications = useOutletContext() ?? []
+  const noteKey = notifications.map((n) => `${n.kind}-${n.inquiry_id}-${n.at ?? ''}`).join('|')
+  const firstKey = useRef(true)
+  useEffect(() => {
+    if (firstKey.current) return void (firstKey.current = false) // the mount load above already has this
+    load({ silent: true })
+  }, [noteKey, load])
+  const reload = useCallback(() => load({ silent: true }), [load])
 
   const selected = state.items.find((i) => String(i.ROWID) === id) ?? null
   // Re-stamped on every refresh while open, so a message arriving in the open chat never shows as unread.
@@ -106,10 +112,11 @@ export default function Chats() {
     return () => document.removeEventListener('keydown', onKey)
   }, [selected, back])
 
-  const grouped = useMemo(
-    () => GROUPS.map((g) => ({ ...g, items: state.items.filter((i) => i.status === g.status).sort((a, b) => activity(b) - activity(a)) })).filter((g) => g.items.length),
-    [state.items],
-  )
+  const needle = q.trim().toLowerCase()
+  const grouped = useMemo(() => {
+    const hit = (i) => !needle || `${i.listing_title} ${i.role === 'seller' ? i.buyer_name : 'seller'} ${i.last_message_preview ?? ''}`.toLowerCase().includes(needle)
+    return GROUPS.map((g) => ({ ...g, items: state.items.filter((i) => i.status === g.status && hit(i)).sort((a, b) => activity(b) - activity(a)) })).filter((g) => g.items.length)
+  }, [state.items, needle])
 
   if (state.error) return <ErrorState message={state.error} onRetry={() => load()} className="min-h-64" />
   if (state.loading && state.items.length === 0) return <ChatsSkeleton />
@@ -129,12 +136,19 @@ export default function Chats() {
   }
 
   return (
-    <div className="fade-in grid h-[calc(100svh-9rem)] min-h-[30rem] overflow-hidden rounded-xl border bg-card lg:grid-cols-[22rem_minmax(0,1fr)]">
+    <div className="fade-in grid h-[calc(100svh-9rem)] min-h-[30rem] overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[22rem_minmax(0,1fr)]">
       <nav className={cn('min-h-0 flex-col overflow-y-auto border-r', selected ? 'hidden lg:flex' : 'flex')} aria-label="Chats">
-        <h1 className="border-b p-3 text-lg font-semibold tracking-tight">Chats <span className="text-sm font-normal text-muted-foreground">({state.items.length})</span></h1>
+        <div className="flex flex-col gap-2.5 border-b p-4">
+          <h1 className="text-lg leading-7 font-semibold tracking-tight">Chats <span className="text-sm font-normal text-muted-foreground">({state.items.length})</span></h1>
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" aria-label="Search chats" className="h-9 pl-8" />
+          </div>
+        </div>
+        {grouped.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No chats match “{q.trim()}”.</p>}
         {grouped.map((g) => (
           <section key={g.status} aria-label={g.label}>
-            <h2 className="sticky top-0 z-10 border-b bg-muted/80 px-3 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase backdrop-blur">
+            <h2 className="sticky top-0 z-10 bg-muted/70 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur">
               {g.label} ({g.items.length})
             </h2>
             <ul>
@@ -161,7 +175,7 @@ export default function Chats() {
             </EmptyHeader>
           </Empty>
         ) : selected.status === 'Accepted' ? (
-          <ChatPanel key={selected.ROWID} id={selected.ROWID} onBack={back} />
+          <ChatPanel key={selected.ROWID} id={selected.ROWID} onBack={back} onActivity={reload} />
         ) : (
           <RequestDetail key={selected.ROWID} inquiry={selected} onBack={back} onChanged={() => load({ silent: true })} />
         )}
@@ -184,7 +198,7 @@ function ChatRow({ inquiry, active, badge }) {
       <Link
         to={`/chats/${inquiry.ROWID}`}
         aria-current={active ? 'true' : undefined}
-        className="flex gap-3 p-3 outline-none hover:bg-muted/60 focus-visible:bg-muted aria-[current=true]:bg-brand-50"
+        className="flex gap-3 p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted aria-[current=true]:bg-brand-50/70 aria-[current=true]:shadow-[inset_3px_0_0_var(--color-brand-500)]"
       >
         <Avatar size="lg">
           <AvatarFallback className="bg-ink-900 font-semibold text-white">{initialOf(who)}</AvatarFallback>
@@ -192,7 +206,7 @@ function ChatRow({ inquiry, active, badge }) {
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
             <span className={cn('min-w-0 flex-1 truncate', unread ? 'font-bold' : 'font-semibold')} title={inquiry.listing_title}>{inquiry.listing_title}</span>
-            <span className={cn('shrink-0 text-xs', unread ? 'font-semibold text-emerald-600' : 'text-muted-foreground')}>
+            <span className={cn('shrink-0 text-[11px]', unread ? 'font-semibold text-emerald-600' : 'text-muted-foreground')}>
               {inquiry.last_message_at ? timeAgoMs(Number(inquiry.last_message_at)) : timeAgo(inquiry.CREATEDTIME)}
             </span>
           </div>
@@ -218,10 +232,10 @@ function ChatRow({ inquiry, active, badge }) {
             )}
           </div>
           {!hasMessages && inquiry.swap_item && <span className="truncate text-sm text-muted-foreground" title={inquiry.swap_item}>Offers: {inquiry.swap_item}</span>}
-          <div className="mt-0.5 flex items-center gap-2">
+          <div className="mt-1 flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Badge tabIndex={0} variant="secondary">{asSeller ? 'Selling' : 'Buying'}</Badge>
+                <Badge tabIndex={0} variant="outline">{asSeller ? 'Selling' : 'Buying'}</Badge>
               </TooltipTrigger>
               <TooltipContent>{asSeller ? 'Someone asked for your item' : 'You asked for this item'}</TooltipContent>
             </Tooltip>
@@ -386,12 +400,15 @@ function RequestDetail({ inquiry, onBack, onChanged }) {
 // Same grid, header and row heights as the loaded page.
 function ChatsSkeleton() {
   return (
-    <div className="grid h-[calc(100svh-9rem)] min-h-[30rem] overflow-hidden rounded-xl border bg-card lg:grid-cols-[22rem_minmax(0,1fr)]" aria-busy="true" aria-label="Loading chats">
+    <div className="grid h-[calc(100svh-9rem)] min-h-[30rem] overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[22rem_minmax(0,1fr)]" aria-busy="true" aria-label="Loading chats">
       <div className="flex flex-col overflow-hidden border-r">
-        <div className="border-b p-3"><Skeleton className="h-7 w-28" /></div>
-        <Skeleton className="h-[30px] rounded-none" />
+        <div className="flex flex-col gap-2.5 border-b p-4">
+          <Skeleton className="h-7 w-28" />
+          <Skeleton className="h-9 w-full rounded-lg" />
+        </div>
+        <Skeleton className="h-7 rounded-none" />
         {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="flex gap-3 border-b p-3">
+          <div key={i} className="flex gap-3 border-b p-4">
             <Skeleton className="size-10 shrink-0 rounded-full" />
             <div className="flex flex-1 flex-col gap-1">
               <Skeleton className="h-5 w-3/4" />

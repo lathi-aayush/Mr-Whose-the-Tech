@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { canPoll, onWake } from '@/lib/activity'
 import { DEMO_OPEN_SIGNUP } from '@/lib/constants'
 
 export function Layout() {
@@ -77,7 +78,7 @@ export function Layout() {
       </header>
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 lg:py-8">
-        <Outlet />
+        <Outlet context={notifications} />
       </main>
 
       <footer className="border-t bg-card">
@@ -161,9 +162,12 @@ function HeaderSearch() {
   )
 }
 
-const NOTIFY_POLL_MS = 10000
+// Each poll is 2 Data Store fetches against a 10,000/month free quota: 30s while active, nothing while
+// the tab is hidden or idle, and never twice within 5s. Chats reloads its list off this poll's result.
+const NOTIFY_POLL_MS = 30000
+const NOTIFY_MIN_GAP_MS = 5000
 
-// ponytail: polls every 10s (and on focus / route change). Upgrade path: Catalyst Signals push.
+// ponytail: polling, not push. Upgrade path: Catalyst Signals.
 const TOAST_TEXT = {
   accepted: (n) => `Seller accepted your request for ${n.listing_title}`,
   request: (n) => `New request for ${n.listing_title}`,
@@ -180,9 +184,13 @@ function useNotifications(enabled) {
   // Read inside refresh() so changing page doesn't recreate it and restart the poll.
   const pathRef = useRef(pathname)
   pathRef.current = pathname
+  const lastRef = useRef(0)
 
-  const refresh = useCallback(async () => {
-    if (!enabled || document.visibilityState !== 'visible') return
+  // force: route changes ask even inside the gap so opening a chat clears its badge promptly.
+  const refresh = useCallback(async (force = false) => {
+    if (!enabled || !canPoll()) return
+    if (!force && Date.now() - lastRef.current < NOTIFY_MIN_GAP_MS) return
+    lastRef.current = Date.now()
     try {
       const data = await api('/me/notifications')
       setItems(data.items)
@@ -213,17 +221,17 @@ function useNotifications(enabled) {
   }, [items.length])
 
   useEffect(() => {
-    const timer = setInterval(refresh, NOTIFY_POLL_MS)
-    window.addEventListener('focus', refresh)
+    const timer = setInterval(() => refresh(), NOTIFY_POLL_MS)
+    const off = onWake(() => refresh())
     return () => {
       clearInterval(timer)
-      window.removeEventListener('focus', refresh)
+      off()
     }
   }, [refresh])
 
   // Delay lets a just-opened chat mark itself read before we ask what's still unread.
   useEffect(() => {
-    const t = setTimeout(refresh, pathname.startsWith('/chats') ? 1500 : 0)
+    const t = setTimeout(() => refresh(true), pathname.startsWith('/chats') ? 1500 : 0)
     return () => clearTimeout(t)
   }, [pathname, refresh])
 

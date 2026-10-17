@@ -241,42 +241,21 @@ async function loadChat(store, user, inquiryId) {
   return { inquiry, role };
 }
 
-// ponytail: presence and typing are timestamps in Catalyst Cache, refreshed by the chat poll.
-// Throwaway and high-frequency, so not Data Store rows. Cache failures must never break chat.
-// Upgrade path: Catalyst Signals or an AppSail websocket for true push.
+// ponytail: no live presence. Catalyst Cache GET is 1,000/month on the free tier, which a 5s chat poll
+// burns in hours. "Seen" comes from the peer's *_read_at column, already on the inquiry row.
+// Upgrade path: Catalyst Signals or an AppSail websocket for online/typing.
 const otherRole = (role) => (role === 'buyer' ? 'seller' : 'buyer');
 
-async function cachePut(admin, key, value) {
-  try {
-    await admin.cache().segment().put(key, String(value), 1);
-  } catch (err) {
-    console.error('Cache put failed', err && err.message);
-  }
-}
-
-async function cacheGet(admin, key) {
-  try {
-    return Number(await admin.cache().segment().getValue(key)) || null;
-  } catch {
-    return null; // missing key and cache errors both mean "no signal"
-  }
-}
-
-route('GET', '/inquiries/:id/messages', async ({ req, store, params, query, admin }) => {
+// Every Data Store query is one "Fetch" against a 10,000/month free quota, so poll ticks (?after=)
+// skip the listing lookup and return only what changes: status, peer read mark, new messages.
+route('GET', '/inquiries/:id/messages', async ({ req, store, params, query }) => {
   const user = await requireUser(req);
   const { inquiry, role } = await loadChat(store, user, params.id);
   if (inquiry.status === 'Pending') throw new ValidationError('Chat unlocks when the seller accepts the request', 409);
-  const listing = await store.getListing(inquiry.listing_id);
   const messages = await store.messagesForInquiry(inquiry.ROWID, query.after);
+  const peer = { readAt: Number(inquiry[`${otherRole(role)}_read_at`]) || null };
 
-  const peerRole = otherRole(role);
-  const [, seenAt, typingAt] = await Promise.all([
-    cachePut(admin, `seen_${inquiry.ROWID}_${role}`, Date.now()),
-    cacheGet(admin, `seen_${inquiry.ROWID}_${peerRole}`),
-    cacheGet(admin, `typing_${inquiry.ROWID}_${peerRole}`),
-  ]);
-
-  // Mark read only when something is unread, so 3s polling doesn't write every time.
+  // Mark read only when something is unread, so polling doesn't write every time.
   const readKey = `${role}_read_at`;
   const readAt = Number(inquiry[readKey]) || 0;
   if (!readAt || Number(inquiry.last_message_at) > readAt || Number(inquiry[`${role}_unread`]) > 0) {
@@ -284,31 +263,28 @@ route('GET', '/inquiries/:id/messages', async ({ req, store, params, query, admi
   }
 
   const open = inquiry.status === 'Accepted';
+  if (query.after !== undefined) return { canSend: open, status: inquiry.status, peer, messages };
+
+  const listing = await store.getListing(inquiry.listing_id);
   let contact = null;
   if (open) contact = role === 'buyer' ? rules.sellerContact(inquiry, listing) : { type: 'email', value: inquiry.buyer_email };
   return {
     role,
     canSend: open,
     status: inquiry.status,
-    listing: listing ? { ROWID: listing.ROWID, title: listing.title, image_urls: listing.image_urls, category: listing.category } : null,
+    listing: listing
+      ? { ROWID: listing.ROWID, title: listing.title, image_urls: listing.image_urls, category: listing.category, price: listing.price, listing_type: listing.listing_type }
+      : null,
     counterpart: role === 'buyer' ? (listing ? listing.seller_name : 'Seller') : inquiry.buyer_name,
     contact,
     me: user.id,
-    peer: rules.presenceState({ seenAt, typingAt }),
+    peer,
     swap: inquiry.swap_item ? { item: inquiry.swap_item, image_urls: inquiry.swap_image_urls } : null,
     messages,
   };
 });
 
-route('POST', '/inquiries/:id/typing', async ({ req, store, params, admin }) => {
-  const user = await requireUser(req);
-  const { inquiry, role } = await loadChat(store, user, params.id);
-  if (inquiry.status !== 'Accepted') throw new ValidationError('This chat is closed', 409);
-  await cachePut(admin, `typing_${inquiry.ROWID}_${role}`, Date.now());
-  return {};
-});
-
-route('POST', '/inquiries/:id/messages', async ({ req, body, store, params, admin }) => {
+route('POST', '/inquiries/:id/messages', async ({ req, body, store, params }) => {
   const user = await requireUser(req);
   const { inquiry, role } = await loadChat(store, user, params.id);
   const input = rules.validateMessageInput(body);
@@ -332,7 +308,6 @@ route('POST', '/inquiries/:id/messages', async ({ req, body, store, params, admi
     [`${role}_unread`]: 0,
     [peerUnread]: (Number(inquiry[peerUnread]) || 0) + 1,
   });
-  await cachePut(admin, `typing_${inquiry.ROWID}_${role}`, 0); // clears "typing…" on send
   return { message };
 });
 
@@ -412,6 +387,8 @@ module.exports = async (req, res) => {
   } catch (err) {
     const status = err.status || 500;
     if (status >= 500) console.error(err);
-    sendJson(res, status, { error: status >= 500 ? 'Something went wrong. Please try again.' : err.message });
+    // TEMP diagnostic: DEBUG_ERRORS=1 returns the real 5xx message. Remove once the chat 500 is found.
+    const show = status < 500 || process.env.DEBUG_ERRORS === '1';
+    sendJson(res, status, { error: show ? `${err.message}${err.code ? ` [${err.code}]` : ''}` : 'Something went wrong. Please try again.' });
   }
 };

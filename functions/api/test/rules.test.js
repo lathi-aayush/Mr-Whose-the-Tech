@@ -140,14 +140,6 @@ test('validateInquiryInput: swap needs an item, limits and owns photos, others d
   assert.deepEqual(buy.swap_image_urls, []);
 });
 
-test('presenceState: online within 10s, typing within 5s, missing means offline', () => {
-  const now = 1_000_000;
-  assert.deepEqual(r.presenceState({ seenAt: now - 3000, typingAt: now - 1000 }, now), { online: true, typing: true, seenAt: now - 3000 });
-  assert.deepEqual(r.presenceState({ seenAt: now - 20000, typingAt: now - 9000 }, now), { online: false, typing: false, seenAt: now - 20000 });
-  assert.deepEqual(r.presenceState({ seenAt: now - 1000, typingAt: 0 }, now), { online: true, typing: false, seenAt: now - 1000 });
-  assert.deepEqual(r.presenceState(null, now), { online: false, typing: false, seenAt: null });
-});
-
 test('searchListings filters, hides Completed by default and sorts deterministically', () => {
   const rows = [
     { ROWID: '1', CREATEDTIME: '2026-10-17 10:00:00:000', title: 'Physics textbook', description: 'HC Verma', category: 'Books', item_condition: 'Good', listing_type: 'sell', price: 200, status: 'Available' },
