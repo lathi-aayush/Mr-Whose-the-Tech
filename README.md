@@ -16,7 +16,7 @@
 ![Node.js](https://img.shields.io/badge/Node.js_20-339933?style=flat-square&logo=nodedotjs&logoColor=white)
 ![Zoho Catalyst](https://img.shields.io/badge/Zoho_Catalyst-E42527?style=flat-square&logo=zoho&logoColor=white)
 
-[**Live Demo**](https://campussibling-wnfeccgs.onslate.in) · [**Video**](https://youtu.be/cxaMaHkJT9c) · [**Docs**](HANDBOOK.md) · [**Report Bug**](https://github.com/lathi-aayush/Mr-Whose-the-Tech/issues/new?labels=bug) · [**Request Feature**](https://github.com/lathi-aayush/Mr-Whose-the-Tech/issues/new?labels=enhancement)
+[**Live Demo**](https://campussibling-wnfeccgs.onslate.in) · [**Video**](https://youtu.be/Ovit6NMIWjY?si=-MvunDqR9pY3-bNc) · [**Docs**](HANDBOOK.md) · [**Report Bug**](https://github.com/lathi-aayush/Mr-Whose-the-Tech/issues/new?labels=bug) · [**Request Feature**](https://github.com/lathi-aayush/Mr-Whose-the-Tech/issues/new?labels=enhancement)
 
 <br>
 
