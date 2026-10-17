@@ -94,6 +94,7 @@ Open **Chats** from the header. One list shows requests you sent (Buying) and re
 - **Seen** — a "Seen" mark appears under your last message once the other person has read it.
 - **Only accepted requests can chat.** Pending requests show the request itself, with Accept and Decline for the seller. Declined requests show a closed notice.
 - **Closed chats** — if the item goes back to Available, the chat becomes read-only.
+- **Report user** — the flag button in the chat header (accepted chats only) sends the admin an email with your reason and the last 10 messages, and closes the chat for both people. Needs the `REPORT_EMAIL` function env var.
 
 ## Alerts inside the app
 

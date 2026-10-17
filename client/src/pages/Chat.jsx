@@ -1,10 +1,15 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeftIcon, CheckCheckIcon, LockIcon, MailIcon, PhoneIcon, SendHorizontalIcon } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { ArrowLeftIcon, CheckCheckIcon, FlagIcon, LockIcon, MailIcon, PhoneIcon, SendHorizontalIcon } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from 'cn'
+import { toast } from 'sonner'
 import { CategoryArt, ErrorState, IconButton, StatusBadge } from '@/components/common'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Field, FieldError, FieldLabel, FieldTitle } from '@/components/ui/field'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
@@ -39,6 +44,7 @@ export function ChatPanel({ id, onBack, onActivity }) {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState(null)
+  const [reporting, setReporting] = useState(false)
   const lastRef = useRef(0)
   const listRef = useRef(null)
   const delayRef = useRef(POLL_MIN_MS)
@@ -177,6 +183,11 @@ export function ChatPanel({ id, onBack, onActivity }) {
           <span className="truncate text-base leading-tight font-semibold">{meta.counterpart}</span>
           <span className="text-xs text-muted-foreground">{meta.role === 'buyer' ? 'Seller' : 'Buyer'}</span>
         </div>
+        {meta.canSend && (
+          <IconButton label="Report user" size="icon-sm" onClick={() => setReporting(true)}>
+            <FlagIcon />
+          </IconButton>
+        )}
       </header>
 
       {/* The item stays pinned above the conversation: photo, price, status, and the contact the seller chose to share. */}
@@ -278,7 +289,88 @@ export function ChatPanel({ id, onBack, onActivity }) {
           </Alert>
         </div>
       )}
+
+      <ReportDialog
+        id={id}
+        name={meta.counterpart}
+        open={reporting}
+        onOpenChange={setReporting}
+        onDone={() => {
+          load()
+          activityRef.current?.()
+        }}
+      />
     </div>
+  )
+}
+
+// Reporting closes the chat server-side (request becomes Declined), so the panel reloads into its read-only state.
+const REPORT_REASONS = ['Harassment or abusive language', 'Spam or scam', 'Inappropriate content', 'No-show or unreliable', 'Other']
+
+function ReportDialog({ id, name, open, onOpenChange, onDone }) {
+  const uid = useId()
+  const [reason, setReason] = useState('')
+  const [details, setDetails] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function submit(e) {
+    e.preventDefault()
+    if (!reason) return setError('Pick a reason')
+    setBusy(true)
+    setError(null)
+    try {
+      await api(`/inquiries/${id}/report`, { method: 'POST', body: { reason, details } })
+      toast.success('Report sent. Chat closed.')
+      onOpenChange(false)
+      onDone()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
+      <DialogContent>
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <DialogHeader>
+            <DialogTitle>Report {name}</DialogTitle>
+            <DialogDescription>An admin reviews the report with the last messages. Reporting closes this chat for both of you.</DialogDescription>
+          </DialogHeader>
+
+          <RadioGroup value={reason} onValueChange={(v) => { setReason(v); setError(null) }} aria-label="Reason">
+            {REPORT_REASONS.map((r, i) => (
+              <FieldLabel key={r} htmlFor={`${uid}-r${i}`}>
+                <Field orientation="horizontal">
+                  <FieldTitle>{r}</FieldTitle>
+                  <RadioGroupItem value={r} id={`${uid}-r${i}`} />
+                </Field>
+              </FieldLabel>
+            ))}
+          </RadioGroup>
+
+          <Textarea
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            maxLength={500}
+            rows={3}
+            placeholder="Details (optional)"
+            aria-label="Details"
+          />
+          {error && <FieldError>{error}</FieldError>}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" variant="destructive" disabled={busy || !reason}>
+              {busy && <Spinner data-icon="inline-start" />}
+              {busy ? 'Reporting…' : 'Report and close chat'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

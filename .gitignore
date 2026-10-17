@@ -3,6 +3,11 @@ dist/
 *.log
 .env
 .env.local
+.env.*.local
+functions/api/secrets.json
+.DS_Store
+.vscode/
+graphify-out/
 
 # Local agent tooling and planning notes, not part of the app
 .agents/
@@ -14,3 +19,6 @@ skills.md
 skills.yaml
 skills-lock.json
 sync-skills.js
+
+# Local demo photos for scripts/seed.mjs
+seed/

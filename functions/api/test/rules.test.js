@@ -181,3 +181,11 @@ test('validateProfileInput trims the name and normalizes or rejects the phone', 
   assert.throws(() => r.validateProfileInput({ name: 'Aayush', phone: '12345' }), /Phone/);
   assert.throws(() => r.validateProfileInput({ name: 'Aayush', phone: 'abc1234567890' }), /Phone/);
 });
+
+test('validateReportInput needs a listed reason and caps details', () => {
+  assert.deepEqual(r.validateReportInput({ reason: 'Spam or scam', details: '  sent  links ' }), { reason: 'Spam or scam', details: 'sent links' });
+  assert.equal(r.validateReportInput({ reason: 'Other' }).details, '');
+  assert.throws(() => r.validateReportInput({ reason: 'rude' }), /Reason/);
+  assert.throws(() => r.validateReportInput({}), /Reason/);
+  assert.throws(() => r.validateReportInput({ reason: 'Other', details: 'x'.repeat(501) }), /500/);
+});

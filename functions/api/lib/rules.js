@@ -139,6 +139,15 @@ function validateMessageInput(body) {
   return { body: text };
 }
 
+const REPORT_REASONS = ['Harassment or abusive language', 'Spam or scam', 'Inappropriate content', 'No-show or unreliable', 'Other'];
+
+function validateReportInput(body) {
+  if (!body || typeof body !== 'object') throw new ValidationError('Request body is required');
+  const reason = oneOf(body.reason, REPORT_REASONS, 'Reason');
+  const details = cleanText(body.details, 'Details', { max: 500 });
+  return { reason, details };
+}
+
 function chatRole(inquiry, userId) {
   if (!inquiry || !userId) return null;
   if (String(inquiry.buyer_id) === String(userId)) return 'buyer';
@@ -270,6 +279,8 @@ module.exports = {
   validateInquiryInput,
   validateProfileInput,
   validateMessageInput,
+  REPORT_REASONS,
+  validateReportInput,
   validateContactShare,
   chatRole,
   sellerContact,

@@ -5,6 +5,14 @@ const rules = require('./lib/rules');
 
 const { ValidationError } = rules;
 
+// SMTP_* credentials live in secrets.json: gitignored (catalyst-config.json is public) but shipped by
+// `catalyst deploy`, so they survive redeploys. Console env vars still win if both are set.
+try {
+  for (const [k, v] of Object.entries(require('./secrets.json'))) process.env[k] ??= String(v);
+} catch (err) {
+  if (err.code !== 'MODULE_NOT_FOUND') console.error('secrets.json unreadable', err.message);
+}
+
 function env(name) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing function env var ${name}`);
@@ -172,6 +180,26 @@ function messageMail({ to, name, sender, title, preview, inquiryId }) {
       [`<b>${escapeHtml(sender)}</b> sent you a message about <b>${escapeHtml(title)}</b>:`, `&ldquo;${escapeHtml(preview)}&rdquo;`],
       chatLink(inquiryId),
       'Open the chat to reply',
+    ),
+  };
+}
+
+function reportMail({ to, inquiry, reporter, reported, reason, details, recent }) {
+  const who = (p) => `<b>${escapeHtml(p.name)}</b> (${escapeHtml(p.email || 'no email on file')}, id ${escapeHtml(p.id)})`;
+  const log = recent.map((m) => `${escapeHtml(m.sender_name)}: ${escapeHtml(m.body)}`).join('<br>');
+  return {
+    to,
+    subject: `User report: ${reason} (${inquiry.listing_title})`,
+    html: mailBody(
+      'admin',
+      [
+        `${who(reporter)} reported ${who(reported)} about <b>${escapeHtml(inquiry.listing_title)}</b>.`,
+        `Reason: <b>${escapeHtml(reason)}</b>${details ? `<br>Details: ${escapeHtml(details)}` : ''}`,
+        `Last messages:<br>${log || '(none)'}`,
+        'The chat was closed (request set to Declined).',
+      ],
+      chatLink(inquiry.ROWID),
+      'Open the chat',
     ),
   };
 }
@@ -411,6 +439,30 @@ route('POST', '/inquiries/:id/messages', async ({ req, body, store, params, admi
   return { message };
 });
 
+// ponytail: no Reports table, so the email is the record. sendMail swallows delivery errors, hence the
+// console.log fallback. Upgrade path: a Reports table with a status column for triage.
+route('POST', '/inquiries/:id/report', async ({ req, body, store, params, admin }) => {
+  const user = await requireUser(req);
+  const { inquiry, role } = await loadChat(store, user, params.id);
+  const input = rules.validateReportInput(body);
+  if (inquiry.status !== 'Accepted') throw new ValidationError('This chat is closed', 409);
+  const to = env('REPORT_EMAIL'); // read before any write so a missing var can't close a chat unreported
+
+  const listing = await store.getListing(inquiry.listing_id);
+  const reporter = { id: user.id, name: user.name, email: user.email };
+  const reported =
+    role === 'buyer'
+      ? { id: String(inquiry.seller_id), name: listing ? listing.seller_name : 'Seller', email: listing && listing.seller_email }
+      : { id: String(inquiry.buyer_id), name: inquiry.buyer_name, email: inquiry.buyer_email };
+  const recent = (await store.messagesForInquiry(inquiry.ROWID)).slice(-10);
+
+  const mail = reportMail({ to, inquiry, reporter, reported, ...input, recent });
+  console.log('USER REPORT', JSON.stringify({ inquiry: inquiry.ROWID, reporter, reported, ...input, recent: recent.map((m) => `${m.sender_name}: ${m.body}`) }));
+  await sendMail(admin, mail);
+  await store.updateInquiryStatus(inquiry.ROWID, 'Declined');
+  return { status: 'Declined' };
+});
+
 route('PATCH', '/inquiries/:id', async ({ req, body, store, params, admin }) => {
   const user = await requireUser(req);
   const action = body.action;
@@ -448,6 +500,65 @@ route('POST', '/uploads/sign', async ({ req, body, admin }) => {
   const key = `${uploadPrefix(user.id)}${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
   const signed = await admin.stratus().bucket(env('STRATUS_BUCKET')).generatePreSignedUrl(key, 'PUT', { expiryIn: 300 });
   return { uploadUrl: signed.signature, publicUrl: `${publicUrlPrefix(user.id)}${key.slice(uploadPrefix(user.id).length)}`, contentType };
+});
+
+// Demo seeding (scripts/seed.mjs). Off unless the SEED_KEY env var is set, so the routes 404 in normal runs.
+// ponytail: plain shared-secret compare is fine for a temporary route; remove SEED_KEY after seeding.
+const SEED_SELLERS = ['Aarav Mehta', 'Diya Nair', 'Rohan Iyer', 'Ananya Rao', 'Kabir Shah', 'Meera Pillai', 'Ishaan Verma', 'Sneha Kulkarni'];
+const seedSeller = (i) => {
+  const n = Number(i);
+  if (!Number.isInteger(n) || n < 1 || n > SEED_SELLERS.length) throw new ValidationError('seller must be 1-' + SEED_SELLERS.length);
+  return { id: `seed-${n}`, name: SEED_SELLERS[n - 1], email: `seed${n}@seed.invalid` };
+};
+function requireSeedKey(req) {
+  if (!process.env.SEED_KEY) throw new ValidationError('Not found', 404);
+  if (req.headers['x-seed-key'] !== process.env.SEED_KEY) throw new ValidationError('Bad seed key', 403);
+}
+
+// Presigned PUT for one seed photo, so the image never passes through the function body (100 KB cap).
+route('POST', '/seed/sign', async ({ req, body, admin }) => {
+  requireSeedKey(req);
+  const seller = seedSeller(body.seller);
+  const { contentType, ext } = rules.validateUploadRequest(body);
+  const key = `${uploadPrefix(seller.id)}photo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  const signed = await admin.stratus().bucket(env('STRATUS_BUCKET')).generatePreSignedUrl(key, 'PUT', { expiryIn: 300 });
+  return { uploadUrl: signed.signature, publicUrl: `${publicUrlPrefix(seller.id)}${key.slice(uploadPrefix(seller.id).length)}`, contentType };
+});
+
+route('POST', '/seed', async ({ req, body, store }) => {
+  requireSeedKey(req);
+  const seller = seedSeller(body.seller);
+  const data = rules.validateListingInput(body, publicUrlPrefix(seller.id));
+  const status = rules.STATUSES.includes(body.status) ? body.status : 'Available';
+  const listing = await store.createListing({ ...data, status, seller_id: seller.id, seller_name: seller.name, seller_email: seller.email });
+  return { id: listing.ROWID };
+});
+
+// Seeded rows are found by their photo path (listings/seed-N/), not seller_id, because /seed/adopt
+// moves them to a real owner. Real uploads live under listings/<userId>/ and never match.
+const seededRows = async (store) => (await store.allListings()).filter((l) => l.image_urls.some((u) => u.includes('/listings/seed-')));
+
+// Gives every seeded listing to a real, existing account so requests and emails reach a person.
+route('POST', '/seed/adopt', async ({ req, body, store, admin }) => {
+  requireSeedKey(req);
+  const email = String(body.email || '').trim().toLowerCase();
+  const user = (await admin.userManagement().getAllUsers()).find((u) => String(u.email_id).toLowerCase() === email);
+  if (!user) throw new ValidationError(`No account with email ${email}`, 404);
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || email;
+  const rows = await seededRows(store);
+  await store.reassignListings(rows.map((l) => l.ROWID), { seller_id: String(user.user_id), seller_name: name, seller_email: email });
+  return { adopted: rows.length, owner: name };
+});
+
+// Removes every seeded row and its photo, wherever it now belongs.
+route('DELETE', '/seed', async ({ req, store, admin }) => {
+  requireSeedKey(req);
+  const rows = await seededRows(store);
+  const base = `${env('STRATUS_PUBLIC_BASE').replace(/\/$/, '')}/`;
+  const objects = rows.flatMap((l) => l.image_urls.filter((u) => u.startsWith(base)).map((u) => ({ key: u.slice(base.length) })));
+  if (objects.length) await admin.stratus().bucket(env('STRATUS_BUCKET')).deleteObjects(objects);
+  await store.deleteListings(rows.map((l) => l.ROWID));
+  return { deleted: rows.length };
 });
 
 module.exports = async (req, res) => {

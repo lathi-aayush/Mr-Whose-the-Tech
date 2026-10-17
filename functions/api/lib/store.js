@@ -89,6 +89,19 @@ function createStore(adminApp) {
       return parseListing(row);
     },
 
+    // Seed tooling only: hands rows to another owner.
+    async reassignListings(ids, fields) {
+      // Batches of 5: all at once trips Catalyst's concurrency limit (TOO_MANY_REQUESTS).
+      for (let i = 0; i < ids.length; i += 5) {
+        await Promise.all(ids.slice(i, i + 5).map((rowId) => listings.updateRow({ ...fields, ROWID: id(rowId) })));
+      }
+    },
+
+    // Seed cleanup only; listings are never deleted by users. Chunked to stay under the per-call id cap.
+    async deleteListings(ids) {
+      for (let i = 0; i < ids.length; i += 100) await listings.deleteRows(ids.slice(i, i + 100).map(id));
+    },
+
     async updateListingStatus(listingId, status) {
       return listings.updateRow({ ROWID: id(listingId), status });
     },
