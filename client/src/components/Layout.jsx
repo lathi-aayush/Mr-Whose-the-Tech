@@ -12,9 +12,9 @@ export function Layout() {
     <div className="min-h-svh">
       <header className="sticky top-0 z-40 border-b border-stone-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4">
-          <Link to="/" className="mr-auto flex items-center gap-2 font-semibold text-stone-900">
-            <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white">♻</span>
-            <span className="hidden sm:inline">Campus Exchange</span>
+          <Link to="/" aria-label="Campus Sibling home" className="mr-auto flex items-center gap-2 font-semibold tracking-tight text-ink-900">
+            <img src="/logo-192.png" alt="" width="32" height="32" className="h-8 w-8" />
+            <span className="hidden sm:inline">Campus Sibling</span>
           </Link>
           <NavLink to="/" end className={navClass}>Browse</NavLink>
           {user && <NavLink to="/dashboard" className={navClass}>My stuff</NavLink>}
@@ -22,7 +22,7 @@ export function Layout() {
             <Skeleton className="h-9 w-20" />
           ) : user ? (
             <>
-              <NavLink to="/sell" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+              <NavLink to="/sell" className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-ink-900 hover:bg-brand-600">
                 + List item
               </NavLink>
               <Tooltip label={`Signed in as ${user.email}. Click to sign out.`} side="bottom">
@@ -32,7 +32,7 @@ export function Layout() {
               </Tooltip>
             </>
           ) : (
-            <NavLink to="/login" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+            <NavLink to="/login" className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-ink-900 hover:bg-brand-600">
               Sign in
             </NavLink>
           )}

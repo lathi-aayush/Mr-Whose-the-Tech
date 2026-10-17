@@ -1,0 +1,14 @@
+{
+  "name": "Campus Sibling",
+  "short_name": "Sibling",
+  "description": "Buy, swap or give away pre-owned items with students on your campus.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAFAF9",
+  "theme_color": "#0DBF74",
+  "icons": [
+    { "src": "/logo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/logo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

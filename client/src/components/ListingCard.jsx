@@ -27,7 +27,7 @@ export function ListingCard({ listing }) {
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="line-clamp-1 font-medium text-stone-900" title={listing.title}>{listing.title}</h3>
+          <h3 className="line-clamp-1 font-medium text-ink-900" title={listing.title}>{listing.title}</h3>
           <span className="shrink-0 font-semibold text-brand-700">{formatPrice(listing)}</span>
         </div>
         <p className="text-xs text-stone-500">

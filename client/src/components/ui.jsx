@@ -54,7 +54,7 @@ export function Skeleton({ className = '' }) {
 
 const STATUS_STYLES = {
   Available: 'bg-brand-50 text-brand-700 ring-brand-600/20',
-  Reserved: 'bg-amber-50 text-amber-800 ring-amber-600/20',
+  Reserved: 'bg-accent-50 text-accent-700 ring-accent-500/20',
   Completed: 'bg-stone-100 text-stone-600 ring-stone-500/20',
   Pending: 'bg-sky-50 text-sky-800 ring-sky-600/20',
   Accepted: 'bg-brand-50 text-brand-700 ring-brand-600/20',
@@ -130,7 +130,7 @@ export const inputClass =
   'block w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm shadow-sm placeholder:text-stone-400 focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20'
 
 export const primaryButton =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60'
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-ink-900 shadow-sm hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60'
 
 export const secondaryButton =
   'inline-flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-stone-800 ring-1 ring-stone-300 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60'

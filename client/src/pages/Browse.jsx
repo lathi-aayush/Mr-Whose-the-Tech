@@ -72,7 +72,7 @@ export default function Browse() {
   return (
     <div>
       <section className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">Give your stuff a second semester.</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink-900 sm:text-3xl">Give your stuff a <span className="underline decoration-brand-500 decoration-4 underline-offset-4">second semester</span>.</h1>
         <p className="mt-1 text-stone-600">Books, calculators, lab gear and more from students on your campus.</p>
       </section>
 

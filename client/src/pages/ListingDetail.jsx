@@ -73,7 +73,7 @@ export default function ListingDetail() {
           <StatusBadge status={listing.status} />
           <span className="text-xs text-stone-500">Listed {timeAgo(listing.CREATEDTIME)}</span>
         </div>
-        <h1 className="mt-2 text-2xl font-semibold text-stone-900">{listing.title}</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-ink-900">{listing.title}</h1>
         <p className="mt-1 text-2xl font-bold text-brand-700">{formatPrice(listing)}</p>
         <dl className="mt-4 grid grid-cols-3 gap-3 rounded-xl border border-stone-200 bg-white p-4 text-sm">
           <div><dt className="text-stone-500">Condition</dt><dd className="font-medium">{listing.item_condition}</dd></div>

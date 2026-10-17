@@ -101,7 +101,7 @@ route('POST', '/signup', async ({ body, admin }) => {
   if (!firstName) throw new ValidationError('First name is required');
   try {
     await admin.userManagement().registerUser(
-      { platform_type: 'web', zaid: env('CATALYST_ZAID') },
+      { platform_type: 'web', zaid: env('AUTH_ZAID') },
       { email_id: email, first_name: firstName, last_name: lastName },
     );
   } catch (err) {

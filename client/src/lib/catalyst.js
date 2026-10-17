@@ -39,7 +39,8 @@ export function safeNext(next) {
 export async function mountSignIn(containerId, next = '/') {
   const catalyst = await waitForSdk()
   // Keys from the console's v4 embed snippet. service_url must be a root path on Slate; the console default "/app/index.html" 404s there.
-  catalyst.auth.signIn(containerId, { service_url: safeNext(next), css_url: '/embedded-login.css' })
+  // No css_url: it replaces Zoho's stylesheet entirely instead of extending it, which renders the form unstyled.
+  catalyst.auth.signIn(containerId, { service_url: safeNext(next) })
 }
 
 export function signOut() {

@@ -1,12 +1,18 @@
 @import "tailwindcss";
 
+/* Sampled from the logo. White text on brand-500 is only 2.4:1, so green fills carry ink-900 text (5.8:1);
+   brand-700 is the green for text on white (5.4:1). */
 @theme {
-  --color-brand-50: #ecfdf3;
-  --color-brand-100: #d1fadf;
-  --color-brand-500: #12b76a;
-  --color-brand-600: #039855;
-  --color-brand-700: #027a48;
-  --color-brand-900: #054f31;
+  --color-brand-50: #e7faf1;
+  --color-brand-100: #c6f3de;
+  --color-brand-500: #0dbf74;
+  --color-brand-600: #0bb06b;
+  --color-brand-700: #067a4a;
+  --color-brand-900: #054d30;
+  --color-accent-50: #f4ecfb;
+  --color-accent-500: #843ccb;
+  --color-accent-700: #6a2ca8;
+  --color-ink-900: #0a2a5e;
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 

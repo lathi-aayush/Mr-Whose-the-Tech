@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Field, IconButton, inputClass, primaryButton } from '../components/ui'
 import { api } from '../lib/api'
@@ -11,8 +11,10 @@ export default function Sell() {
   const [photos, setPhotos] = useState([]) // { id, preview, blob }
   const [status, setStatus] = useState({ busy: false, step: '', error: null })
 
-  // Free preview object URLs when photos are removed or the page unmounts.
-  useEffect(() => () => photos.forEach((p) => URL.revokeObjectURL(p.preview)), [photos])
+  // Free preview object URLs on unmount only; a [photos] cleanup would revoke previews that are still shown.
+  const photosRef = useRef(photos)
+  photosRef.current = photos
+  useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.preview)), [])
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
@@ -34,6 +36,8 @@ export default function Sell() {
   }
 
   function removePhoto(id) {
+    const gone = photos.find((x) => x.id === id)
+    if (gone) URL.revokeObjectURL(gone.preview)
     setPhotos((p) => p.filter((x) => x.id !== id))
   }
 
@@ -57,7 +61,7 @@ export default function Sell() {
   return (
     <form onSubmit={submit} className="mx-auto max-w-2xl space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold text-stone-900">List an item</h1>
+        <h1 className="text-2xl font-semibold text-ink-900">List an item</h1>
         <p className="mt-1 text-sm text-stone-500">Clear photos and an honest condition get faster replies.</p>
       </div>
 
