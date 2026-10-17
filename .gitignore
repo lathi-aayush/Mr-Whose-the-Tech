@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+
+# Local agent tooling and planning notes, not part of the app
+.agents/
+.claude/
+docs/
+PROJECT_STARTING_PROMPT.md
+problem_statement.md
+skills.md
+skills.yaml
+skills-lock.json
+sync-skills.js

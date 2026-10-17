@@ -1,0 +1,6 @@
+/* Loaded inside the Catalyst login iframe via css_url.
+   ponytail: generic rules only; the iframe's internal class names are unknown until we inspect the live widget. */
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: transparent;
+}

@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Catalyst injects the embedded login iframe with no height; without this it renders invisible. */
+#login-container iframe {
+  width: 100% !important;
+  height: 500px !important;
+  border: none !important;
+}

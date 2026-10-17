@@ -1,0 +1,30 @@
+{
+  "defaults": {
+    "project": 1,
+    "env": 1
+  },
+  "actives": {
+    "project": 1,
+    "env": 1
+  },
+  "projects": [
+    {
+      "idx": 1,
+      "id": "81543000000026001",
+      "name": "campus-exchange",
+      "domain": {
+        "id": "50046959265",
+        "name": "campus-exchange-60090998580.development"
+      },
+      "timezone": "Asia/Kolkata",
+      "env": [
+        {
+          "idx": 1,
+          "id": "60090998580",
+          "name": "Development",
+          "type": 3
+        }
+      ]
+    }
+  ]
+}
