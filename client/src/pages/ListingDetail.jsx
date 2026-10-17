@@ -8,12 +8,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldSet } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { formatPrice, timeAgo, typeLabel } from '@/lib/constants'
@@ -292,7 +291,7 @@ const MAX_SWAP_PHOTOS = 3
 
 function InquiryForm({ listing }) {
   const [message, setMessage] = useState('')
-  const [offerType, setOfferType] = useState(listing.listing_type)
+  const offerType = listing.listing_type
   const [swapItem, setSwapItem] = useState('')
   const [photos, setPhotos] = useState([]) // { id, preview, blob }
   const [status, setStatus] = useState({ busy: false, error: null, sent: false })
@@ -360,17 +359,11 @@ function InquiryForm({ listing }) {
   return (
     <form onSubmit={submit}>
       <FieldGroup className="gap-4">
-        <FieldSet className="gap-2">
-          <FieldLegend variant="label" className="mb-0">I'd like to</FieldLegend>
-          {/* Single-select ToggleGroup lets the active item be unpressed (value ''); ignore that. */}
-          <ToggleGroup type="single" variant="outline" spacing={2} value={offerType} onValueChange={(v) => v && setOfferType(v)} aria-label="I'd like to" className="grid w-full grid-cols-3">
-            {Object.entries(OFFER_CHOICES).map(([value, label]) => (
-              <ToggleGroupItem key={value} value={value} className="h-auto min-h-11 whitespace-normal px-2 text-center text-xs font-semibold leading-tight sm:text-sm">
-                {label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </FieldSet>
+        {/* The seller's listing type is the only exchange offered; the server rejects any other. */}
+        <p className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm font-semibold">
+          <AttrIcon inline meta={EXCHANGE_META[offerType]} className="size-4" />
+          {OFFER_CHOICES[offerType]}
+        </p>
         {isSwap && (
           <FieldSet className="fade-in gap-3">
             <Field>

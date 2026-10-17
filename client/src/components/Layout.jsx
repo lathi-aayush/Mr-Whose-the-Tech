@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BellIcon, CheckCheckIcon, LogOutIcon, MessageCircleIcon, MessagesSquareIcon, PackageIcon, PlusIcon, SearchIcon } from 'lucide-react'
+import { BellIcon, CheckCheckIcon, LogOutIcon, MessageCircleIcon, MessagesSquareIcon, PackageIcon, PlusIcon, SearchIcon, UserRoundIcon } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -28,31 +28,40 @@ export function Layout() {
   return (
     <div className="flex min-h-svh flex-col">
       <header className="border-b bg-card lg:sticky lg:top-0 lg:z-40">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 lg:flex-nowrap lg:gap-x-6">
+        {/* Phones: row 1 logo + actions, row 2 full-width search. Desktop: one row. */}
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-2 gap-y-2.5 px-4 py-2.5 sm:gap-x-3 lg:flex-nowrap lg:gap-x-6">
           <Link to="/" className="mr-auto flex shrink-0 items-center gap-2 rounded-md font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50 lg:mr-0" aria-label="Campus Sibling home">
             <img src="/logo-192.png" alt="" width="36" height="36" className="size-9" />
-            <span className="text-lg">Campus Sibling</span>
+            {/* Wordmark drops on phones so logo + actions fit one row; the link keeps its aria-label. */}
+            <span className="hidden text-lg sm:inline">Campus Sibling</span>
           </Link>
 
           <HeaderSearch />
 
-          <nav aria-label="Account" className="flex items-center gap-2">
+          {/* ml-auto: search is capped at max-w-2xl, so without it the actions stop short of the right edge. */}
+          <nav aria-label="Account" className="flex shrink-0 items-center gap-1 sm:gap-2 lg:ml-auto">
             {user && (
               <>
                 <Button variant="ghost" asChild className="hidden sm:inline-flex">
                   <NavLink to="/dashboard" className="aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground">My listings</NavLink>
                 </Button>
-                <Button variant="ghost" asChild>
-                  <NavLink to="/chats" className="aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground">
-                    <MessagesSquareIcon data-icon="inline-start" />
-                    Chats
-                    {notifications.length > 0 && (
-                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white" aria-label={`${notifications.length} unread`}>
-                        {notifications.length > 9 ? '9+' : notifications.length}
-                      </span>
-                    )}
-                  </NavLink>
-                </Button>
+                {/* Icon-only on phones, so it gets a tooltip there. */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" asChild className="px-2.5 sm:px-3">
+                      <NavLink to="/chats" aria-label={notifications.length ? `Chats, ${notifications.length} unread` : 'Chats'} className="aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground">
+                        <MessagesSquareIcon data-icon="inline-start" />
+                        <span className="hidden sm:inline">Chats</span>
+                        {notifications.length > 0 && (
+                          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white" aria-hidden="true">
+                            {notifications.length > 9 ? '9+' : notifications.length}
+                          </span>
+                        )}
+                      </NavLink>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="sm:hidden">Chats</TooltipContent>
+                </Tooltip>
               </>
             )}
             <Button asChild>
@@ -62,7 +71,7 @@ export function Layout() {
               </Link>
             </Button>
             {user === undefined ? (
-              <Skeleton className="size-10 rounded-full" />
+              <Skeleton className="size-9 rounded-full" />
             ) : user ? (
               <>
                 <NotificationsMenu items={notifications} />
@@ -302,7 +311,7 @@ function AccountMenu({ user }) {
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
-              <Avatar className="size-10">
+              <Avatar className="size-8">
                 <AvatarFallback className="bg-ink-900 font-semibold text-white">{initial}</AvatarFallback>
               </Avatar>
             </Button>
@@ -317,6 +326,7 @@ function AccountMenu({ user }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
+          <DropdownMenuItem asChild><Link to="/profile"><UserRoundIcon />Profile</Link></DropdownMenuItem>
           <DropdownMenuItem asChild><Link to="/dashboard"><PackageIcon />My listings</Link></DropdownMenuItem>
           <DropdownMenuItem asChild><Link to="/chats"><MessagesSquareIcon />Chats</Link></DropdownMenuItem>
         </DropdownMenuGroup>

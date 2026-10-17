@@ -8,11 +8,20 @@ const base = {
   title: 'Casio fx-991ES',
   description: 'Works fine',
   category: 'Calculators & Electronics',
-  item_condition: 'Good',
+  item_condition: 'Once used',
   listing_type: 'sell',
   price: 450,
   image_urls: [`${PREFIX}photo-1.webp`],
 };
+
+test('conditions: new 3-value scale, old values rejected on write but mapped on read', () => {
+  assert.equal(r.validateListingInput(base, PREFIX).item_condition, 'Once used');
+  assert.throws(() => r.validateListingInput({ ...base, item_condition: 'Good' }, PREFIX), /Condition/);
+  assert.equal(r.normalizeCondition('Like New'), 'Once used');
+  assert.equal(r.normalizeCondition('Good'), 'Used more than once');
+  assert.equal(r.normalizeCondition('Fair'), 'Used more than once');
+  assert.equal(r.normalizeCondition('New'), 'New');
+});
 
 test('isAllowedEmail matches the exact domain only', () => {
   const allowed = r.parseAllowedDomains(' VIT.edu , vitstudent.ac.in ');
@@ -153,4 +162,22 @@ test('searchListings filters, hides Completed by default and sorts deterministic
   assert.deepEqual(r.searchListings(rows, { category: 'Books' }).map((l) => l.ROWID), ['1']);
   assert.deepEqual(r.searchListings(rows, { sort: 'price_desc' }).map((l) => l.ROWID), ['1', '2']);
   assert.deepEqual(r.searchListings(rows, { sort: 'oldest' }).map((l) => l.ROWID), ['1', '2']);
+});
+
+test('shouldEmailMessage: first unread of a burst, and only when the chat has not been read recently', () => {
+  const now = 10_000_000;
+  const min = 60_000;
+  assert.equal(r.shouldEmailMessage({ unread: 0, readAt: null, now }), true);
+  assert.equal(r.shouldEmailMessage({ unread: 0, readAt: now - 6 * min, now }), true);
+  assert.equal(r.shouldEmailMessage({ unread: 0, readAt: now - 2 * min, now }), false);
+  assert.equal(r.shouldEmailMessage({ unread: 1, readAt: now - 60 * min, now }), false);
+  assert.equal(r.shouldEmailMessage({ unread: undefined, readAt: undefined, now }), true);
+});
+
+test('validateProfileInput trims the name and normalizes or rejects the phone', () => {
+  assert.deepEqual(r.validateProfileInput({ name: '  Aayush   Lathi ', phone: '+91 98765-43210' }), { name: 'Aayush Lathi', phone: '+919876543210' });
+  assert.equal(r.validateProfileInput({ name: 'Aa' }).phone, '');
+  assert.throws(() => r.validateProfileInput({ name: 'A', phone: '' }), /Name/);
+  assert.throws(() => r.validateProfileInput({ name: 'Aayush', phone: '12345' }), /Phone/);
+  assert.throws(() => r.validateProfileInput({ name: 'Aayush', phone: 'abc1234567890' }), /Phone/);
 });

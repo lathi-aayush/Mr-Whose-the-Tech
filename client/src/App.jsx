@@ -10,6 +10,7 @@ import Chats from './pages/Chats'
 import Dashboard from './pages/Dashboard'
 import ListingDetail from './pages/ListingDetail'
 import Login from './pages/Login'
+import Profile from './pages/Profile'
 import Sell from './pages/Sell'
 import SmokeTest from './pages/SmokeTest'
 
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="listings/:id" element={<ListingDetail />} />
         <Route path="sell" element={<RequireAuth><Sell /></RequireAuth>} />
         <Route path="dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="profile" element={<RequireAuth><Profile /></RequireAuth>} />
         <Route path="chats" element={<RequireAuth><Chats /></RequireAuth>} />
         <Route path="chats/:id" element={<RequireAuth><Chats /></RequireAuth>} />
         <Route path="chat/:id" element={<LegacyChatRedirect />} />

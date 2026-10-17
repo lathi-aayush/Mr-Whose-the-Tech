@@ -72,7 +72,7 @@ function publicUrlPrefix(userId) {
 // Seller email is only revealed to a buyer whose inquiry was accepted.
 function publicListing(l) {
   const { seller_email, ...rest } = l;
-  return rest;
+  return { ...rest, item_condition: rules.normalizeCondition(rest.item_condition) };
 }
 
 // A buyer's list never carries seller contact: the raw phone/email columns stay on the server and the
@@ -86,25 +86,94 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Best-effort: the accept is already saved, so a mail failure (unverified sender, quota) must not undo it.
-async function emailBuyerAccepted(admin, inquiry, listing, contact) {
-  try {
-    const link = `${env('APP_URL').replace(/\/$/, '')}/chats/${inquiry.ROWID}`;
-    const title = escapeHtml(listing.title);
-    await admin.email().sendMail({
-      from_email: env('MAIL_FROM'),
-      to_email: [inquiry.buyer_email],
-      subject: `Your request for "${listing.title}" was accepted`,
-      html_mode: true,
-      content:
-        `<p>Hi ${escapeHtml(inquiry.buyer_name)},</p>` +
-        `<p>${escapeHtml(listing.seller_name)} accepted your request for <b>${title}</b>.</p>` +
-        `<p>${contact.type === 'phone' ? 'Phone' : 'Email'}: <b>${escapeHtml(contact.value)}</b></p>` +
-        `<p><a href="${escapeHtml(link)}">Open the chat</a> to arrange the handover.</p>`,
+// Best-effort: the action is already saved, so a mail failure (bad credentials, quota) must not undo it.
+// SMTP_* env vars (set in the Catalyst console, never in catalyst-config.json: that file is public) send
+// through the owner's own SMTP account; without them it falls back to Catalyst Mail, which needs a
+// domain-verified sender and is capped at 100/month. rules.shouldEmailMessage keeps chat emails rare.
+let smtp;
+function smtpTransport() {
+  if (!smtp) {
+    const port = Number(process.env.SMTP_PORT) || 465;
+    smtp = require('nodemailer').createTransport({
+      host: process.env.SMTP_HOST,
+      port,
+      secure: port === 465, // 587 upgrades with STARTTLS
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      // Fail fast: a blocked outbound port must not hold the request open until the function times out.
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
     });
-  } catch (err) {
-    console.error('Accepted-email failed', err && err.code, err && err.message);
   }
+  return smtp;
+}
+
+async function sendMail(admin, { to, subject, html }) {
+  try {
+    if (process.env.SMTP_HOST) {
+      const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+      await smtpTransport().sendMail({ from: `Campus Sibling <${from}>`, to, subject, html });
+    } else {
+      await admin.email().sendMail({ from_email: env('MAIL_FROM'), to_email: [to], subject, html_mode: true, content: html });
+    }
+  } catch (err) {
+    console.error('Mail failed', err && err.code, err && err.message);
+    if (process.env.DEBUG_ERRORS === '1') throw new Error(`MAIL: ${err && err.message}`); // TEMP: surfaces the real mail error
+  }
+}
+
+const chatLink = (inquiryId) => `${env('APP_URL').replace(/\/$/, '')}/chats/${inquiryId}`;
+
+// Every interpolated value is user text, so callers pass it through escapeHtml.
+function mailBody(name, paragraphs, link, cta) {
+  return `<p>Hi ${escapeHtml(name)},</p>${paragraphs.map((p) => `<p>${p}</p>`).join('')}<p><a href="${escapeHtml(link)}">${escapeHtml(cta)}</a></p>`;
+}
+
+const OFFER_VERB = { sell: 'buy', swap: 'swap for', free: 'take for free' };
+
+function requestMail(inquiry, listing) {
+  return {
+    to: listing.seller_email,
+    subject: `New request for "${listing.title}"`,
+    html: mailBody(
+      listing.seller_name,
+      [
+        `<b>${escapeHtml(inquiry.buyer_name)}</b> wants to ${OFFER_VERB[inquiry.offer_type] || 'get'} your <b>${escapeHtml(listing.title)}</b>.`,
+        `&ldquo;${escapeHtml(inquiry.message)}&rdquo;`,
+      ],
+      chatLink(inquiry.ROWID),
+      'Open your chats to accept or decline',
+    ),
+  };
+}
+
+function acceptedMail(inquiry, listing, contact) {
+  return {
+    to: inquiry.buyer_email,
+    subject: `Your request for "${listing.title}" was accepted`,
+    html: mailBody(
+      inquiry.buyer_name,
+      [
+        `${escapeHtml(listing.seller_name)} accepted your request for <b>${escapeHtml(listing.title)}</b>.`,
+        `${contact.type === 'phone' ? 'Phone' : 'Email'}: <b>${escapeHtml(contact.value)}</b>`,
+      ],
+      chatLink(inquiry.ROWID),
+      'Open the chat to arrange the handover',
+    ),
+  };
+}
+
+function messageMail({ to, name, sender, title, preview, inquiryId }) {
+  return {
+    to,
+    subject: `${sender} sent you a message about "${title}"`,
+    html: mailBody(
+      name,
+      [`<b>${escapeHtml(sender)}</b> sent you a message about <b>${escapeHtml(title)}</b>:`, `&ldquo;${escapeHtml(preview)}&rdquo;`],
+      chatLink(inquiryId),
+      'Open the chat to reply',
+    ),
+  };
 }
 
 const routes = [];
@@ -120,6 +189,25 @@ route('GET', '/me', async ({ req }) => {
   const user = await currentUser(req);
   if (!user) throw new ValidationError('Sign in required', 401);
   return { ...user, campusVerified: rules.isAllowedEmail(user.email, rules.parseAllowedDomains(env('ALLOWED_EMAIL_DOMAINS'))) };
+});
+
+route('GET', '/me/profile', async ({ req, store }) => {
+  const user = await requireUser(req);
+  const profile = await store.getProfile(user.id);
+  return { name: user.name, email: user.email, phone: (profile && profile.phone) || '' };
+});
+
+route('PATCH', '/me/profile', async ({ req, body, store, admin }) => {
+  const user = await requireUser(req);
+  const input = rules.validateProfileInput(body);
+  if (input.name !== user.name) {
+    const [first, ...rest] = input.name.split(' ');
+    // email_id is resent unchanged: the update call takes the full identity block.
+    await admin.userManagement().updateUserDetails(user.id, { first_name: first, last_name: rest.join(' '), email_id: user.email });
+    await store.renameUser(user.id, input.name);
+  }
+  await store.saveProfile(user.id, input.phone);
+  return { name: input.name, email: user.email, phone: input.phone };
 });
 
 route('POST', '/signup', async ({ body, admin }) => {
@@ -192,13 +280,14 @@ route('PATCH', '/listings/:id/status', async ({ req, body, store, params }) => {
   return { status: body.status };
 });
 
-route('POST', '/listings/:id/inquiries', async ({ req, body, store, params }) => {
+route('POST', '/listings/:id/inquiries', async ({ req, body, store, params, admin }) => {
   const user = await requireUser(req);
   const input = rules.validateInquiryInput(body, publicUrlPrefix(user.id));
   const listing = await store.getListing(params.id);
   if (!listing) throw new ValidationError('Listing not found', 404);
   if (listing.seller_id === user.id) throw new ValidationError("You can't send an inquiry on your own listing", 409);
   if (listing.status !== 'Available') throw new ValidationError(`This item is ${listing.status.toLowerCase()}`, 409);
+  if (input.offer_type !== listing.listing_type) throw new ValidationError(`This item is listed for ${listing.listing_type} only`, 400);
   const existing = await store.inquiriesForListing(listing.ROWID);
   if (existing.some((i) => i.buyer_id === user.id && i.status === 'Pending')) {
     throw new ValidationError('You already have a pending inquiry on this item', 409);
@@ -213,6 +302,7 @@ route('POST', '/listings/:id/inquiries', async ({ req, body, store, params }) =>
     buyer_email: user.email,
     status: 'Pending',
   });
+  await sendMail(admin, requestMail(inquiry, listing));
   return { inquiry };
 });
 
@@ -284,7 +374,7 @@ route('GET', '/inquiries/:id/messages', async ({ req, store, params, query }) =>
   };
 });
 
-route('POST', '/inquiries/:id/messages', async ({ req, body, store, params }) => {
+route('POST', '/inquiries/:id/messages', async ({ req, body, store, params, admin }) => {
   const user = await requireUser(req);
   const { inquiry, role } = await loadChat(store, user, params.id);
   const input = rules.validateMessageInput(body);
@@ -299,15 +389,25 @@ route('POST', '/inquiries/:id/messages', async ({ req, body, store, params }) =>
   });
   // ponytail: read-modify-write counter. Two messages from the same sender landing in the same instant
   // can lose one increment; the unread dot still shows. Upgrade path: count Messages rows.
-  const peerUnread = `${otherRole(role)}_unread`;
+  const peerRole = otherRole(role);
+  const peerUnread = `${peerRole}_unread`;
+  const preview = input.body.replace(/\s+/g, ' ').slice(0, 80);
   await store.updateInquiry(inquiry.ROWID, {
     last_message_at: now,
     last_sender_id: user.id,
-    last_message_preview: input.body.replace(/\s+/g, ' ').slice(0, 80),
+    last_message_preview: preview,
     [`${role}_read_at`]: now,
     [`${role}_unread`]: 0,
     [peerUnread]: (Number(inquiry[peerUnread]) || 0) + 1,
   });
+  // Away-recipient email. Read before the update above lands, so this uses the counts the sender saw.
+  if (rules.shouldEmailMessage({ unread: inquiry[peerUnread], readAt: inquiry[`${peerRole}_read_at`] })) {
+    // Only the buyer's row carries its email; the seller's is on the listing (one extra fetch, only when emailing).
+    const listing = role === 'buyer' ? await store.getListing(inquiry.listing_id) : null;
+    const to = role === 'seller' ? inquiry.buyer_email : listing && listing.seller_email;
+    const name = role === 'seller' ? inquiry.buyer_name : listing && listing.seller_name;
+    if (to) await sendMail(admin, messageMail({ to, name, sender: user.name, title: inquiry.listing_title, preview, inquiryId: inquiry.ROWID }));
+  }
   return { message };
 });
 
@@ -337,7 +437,7 @@ route('PATCH', '/inquiries/:id', async ({ req, body, store, params, admin }) => 
     (i) => i.status === 'Pending' && i.ROWID !== inquiry.ROWID,
   );
   await Promise.all(others.map((i) => store.updateInquiryStatus(i.ROWID, 'Declined')));
-  await emailBuyerAccepted(admin, inquiry, listing, rules.sellerContact({ ...inquiry, ...share }, listing));
+  await sendMail(admin, acceptedMail(inquiry, listing, rules.sellerContact({ ...inquiry, ...share }, listing)));
   return { status: 'Accepted', listingStatus: 'Reserved', declined: others.length };
 });
 

@@ -8,6 +8,7 @@ Built for the ACM Online Buildathon (Sustainability / Campus Utility).
 
 - **Live app:** https://campussibling-wnfeccgs.onslate.in
 - **Demo video (3–5 min):** _coming soon_
+- **Handbook:** [HANDBOOK.md](HANDBOOK.md) covers every feature, rule and limit, including exactly when emails are sent
 
 > **Demo note:** the app is built for a single campus and normally accepts only `@vit.edu` emails. For judging, sign-up is open to any email so you can try it. Set `ALLOWED_EMAIL_DOMAINS` back to `vit.edu` to lock it to one campus.
 
@@ -21,7 +22,7 @@ One searchable board, limited to verified students of one campus (`@vit.edu`), w
 
 1. A seller lists an item with photos, category, condition, and whether it's for sale, swap, or free.
 2. Buyers search, filter, and sort, then send an inquiry with a message.
-3. The seller accepts one inquiry. The item flips to **Reserved**, other pending requests are declined, and both sides see each other's email.
+3. The seller accepts one inquiry and chooses whether the buyer sees their email or a phone number. The item flips to **Reserved**, other pending requests are declined, and a chat opens.
 4. After the handover the seller marks it **Completed**, and it drops out of the default browse.
 
 ## Features
@@ -31,7 +32,10 @@ One searchable board, limited to verified students of one campus (`@vit.edu`), w
 - **Inquiries and exchange requests** for buying, swapping, or taking free items
 - **Status tracking** Available → Reserved → Completed, enforced on the server
 - **Campus-only accounts**: sign-up is rejected unless the email domain matches (`ALLOWED_EMAIL_DOMAINS`; `*` opens it for the demo)
-- **Contact privacy**: emails are revealed only after a seller accepts
+- **Contact privacy**: the seller picks email or phone, and it is revealed only after they accept
+- **Chat** between buyer and seller once a request is accepted, with day dividers and a "Seen" mark
+- **Alerts**: in-app bell, toasts and unread counts, plus emails to people who are away (new request, accepted, new chat message)
+- **Profile** page for name and optional phone
 - Installable on phones (PWA manifest), skeleton loaders, keyboard shortcut `/` to search
 
 ## Tech Stack

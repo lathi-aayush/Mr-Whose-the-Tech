@@ -1,6 +1,6 @@
 import {
   ArrowLeftRightIcon, BadgeCheckIcon, BedDoubleIcon, BookOpenIcon, CalculatorIcon, FlaskConicalIcon, GiftIcon, IndianRupeeIcon,
-  PackageIcon, PencilLineIcon, RotateCwIcon, SparklesIcon, ThumbsUpIcon, TriangleAlertIcon, WrenchIcon,
+  PackageIcon, PencilLineIcon, RotateCwIcon, SparklesIcon, ThumbsUpIcon, TriangleAlertIcon,
 } from 'lucide-react'
 import { cn } from 'cn'
 import { Badge } from '@/components/ui/badge'
@@ -76,12 +76,11 @@ export function ErrorState({ message, onRetry, className }) {
 }
 
 // Full class strings (not built from parts) so Tailwind's scanner keeps them. Icons sit at -700 on -50
-// for 3:1+ contrast. Condition runs green to orange as wear increases.
+// for 3:1+ contrast. Condition runs green to amber as use increases.
 export const CONDITION_META = {
   New: { icon: SparklesIcon, tone: 'bg-emerald-50 text-emerald-700', hint: 'Unused, as it came from the shop' },
-  'Like New': { icon: BadgeCheckIcon, tone: 'bg-lime-50 text-lime-700', hint: 'Used a few times, no visible wear' },
-  Good: { icon: ThumbsUpIcon, tone: 'bg-amber-50 text-amber-700', hint: 'Normal signs of use, works fully' },
-  Fair: { icon: WrenchIcon, tone: 'bg-orange-50 text-orange-700', hint: 'Heavy wear or small defects, still usable' },
+  'Once used': { icon: BadgeCheckIcon, tone: 'bg-lime-50 text-lime-700', hint: 'Used one time, no visible wear' },
+  'Used more than once': { icon: ThumbsUpIcon, tone: 'bg-amber-50 text-amber-700', hint: 'Used regularly, works fully' },
 }
 export const EXCHANGE_META = {
   sell: { icon: IndianRupeeIcon, tone: 'bg-blue-50 text-ink-900', hint: 'Pay the seller the listed price' },

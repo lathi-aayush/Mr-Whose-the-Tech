@@ -2,7 +2,10 @@
 // Pure business rules: no SDK, no I/O, so they're unit-testable with node:test.
 
 const CATEGORIES = ['Books', 'Calculators & Electronics', 'Lab Supplies', 'Stationery', 'Hostel Essentials', 'Other'];
-const CONDITIONS = ['New', 'Like New', 'Good', 'Fair'];
+const CONDITIONS = ['New', 'Once used', 'Used more than once'];
+// Rows saved before the 3-value scale; mapped on read so old listings still filter and display.
+const LEGACY_CONDITIONS = { 'Like New': 'Once used', Good: 'Used more than once', Fair: 'Used more than once' };
+const normalizeCondition = (c) => LEGACY_CONDITIONS[c] || c;
 const LISTING_TYPES = ['sell', 'swap', 'free'];
 const STATUSES = ['Available', 'Reserved', 'Completed'];
 const SORTS = ['newest', 'oldest', 'price_asc', 'price_desc'];
@@ -117,6 +120,15 @@ function validateInquiryInput(body, ownPrefix) {
 }
 
 
+// Email is the login identity and the campus-domain check key, so it is not editable here.
+function validateProfileInput(body) {
+  if (!body || typeof body !== 'object') throw new ValidationError('Request body is required');
+  const name = cleanText(body.name, 'Name', { min: 2, max: 80 });
+  const phone = String(body.phone ?? '').replace(/[\s\-()]/g, '');
+  if (phone && !/^\+?\d{10,15}$/.test(phone)) throw new ValidationError('Phone must be 10–15 digits, optional leading +');
+  return { name, phone };
+}
+
 function validateMessageInput(body) {
   if (!body || typeof body !== 'object') throw new ValidationError('Request body is required');
   if (typeof body.body !== 'string') throw new ValidationError('Message must be text');
@@ -147,6 +159,16 @@ function validateContactShare(body) {
 function sellerContact(inquiry, listing) {
   if (inquiry.shared_contact === 'phone' && inquiry.seller_phone) return { type: 'phone', value: inquiry.seller_phone };
   return { type: 'email', value: listing ? listing.seller_email : null };
+}
+
+// Mail is capped at 100/month on the free tier, so a chat message only emails the first unread one of a
+// burst, and only when the recipient hasn't read this chat recently (a recent read mark means they are
+// in it). There is no presence signal to do better.
+const MESSAGE_EMAIL_QUIET_MS = 5 * 60 * 1000;
+function shouldEmailMessage({ unread, readAt, now = Date.now() }) {
+  if ((Number(unread) || 0) > 0) return false;
+  const last = Number(readAt) || 0;
+  return !last || now - last > MESSAGE_EMAIL_QUIET_MS;
 }
 
 // Unread = what the bell shows. The buyer's "accepted" item is the approval notification;
@@ -237,6 +259,7 @@ function searchListings(listings, params = {}) {
 module.exports = {
   CATEGORIES,
   CONDITIONS,
+  normalizeCondition,
   LISTING_TYPES,
   STATUSES,
   SORTS,
@@ -245,11 +268,13 @@ module.exports = {
   isAllowedEmail,
   validateListingInput,
   validateInquiryInput,
+  validateProfileInput,
   validateMessageInput,
   validateContactShare,
   chatRole,
   sellerContact,
   unreadNotifications,
+  shouldEmailMessage,
   validateUploadRequest,
   assertOwnerTransition,
   searchListings,

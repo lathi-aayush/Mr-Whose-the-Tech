@@ -47,6 +47,7 @@ function createStore(adminApp) {
   const listings = adminApp.datastore().table('Listings');
   const inquiries = adminApp.datastore().table('Inquiries');
   const messages = adminApp.datastore().table('Messages');
+  const profiles = adminApp.datastore().table('Profiles');
 
   async function query(sql, table) {
     const rows = await zcql.executeZCQLQuery(sql);
@@ -110,6 +111,28 @@ function createStore(adminApp) {
     async inquiriesForSeller(sellerId) {
       const rows = await scan(`SELECT * FROM Inquiries WHERE seller_id = ${str(sellerId)} ORDER BY CREATEDTIME DESC`, 'Inquiries');
       return rows.map(parseInquiry);
+    },
+
+    // One Profiles row per user (user_id, phone); name lives on the Catalyst user.
+    async getProfile(userId) {
+      const rows = await query(`SELECT * FROM Profiles WHERE user_id = ${str(userId)}`, 'Profiles');
+      return rows[0] || null;
+    },
+
+    async saveProfile(userId, phone) {
+      const existing = await this.getProfile(userId);
+      if (existing) return profiles.updateRow({ ROWID: existing.ROWID, phone });
+      return profiles.insertRow({ user_id: String(userId), phone });
+    },
+
+    // Names are copied onto rows at write time, so a rename has to rewrite the user's own rows.
+    // Only rows whose name differs are touched, which keeps a no-op rename free.
+    async renameUser(userId, name) {
+      const [mine, asBuyer] = await Promise.all([this.listingsBySeller(userId), this.inquiriesByBuyer(userId)]);
+      await Promise.all([
+        ...mine.filter((l) => l.seller_name !== name).map((l) => listings.updateRow({ ROWID: id(l.ROWID), seller_name: name })),
+        ...asBuyer.filter((i) => i.buyer_name !== name).map((i) => inquiries.updateRow({ ROWID: id(i.ROWID), buyer_name: name })),
+      ]);
     },
 
     async createInquiry(data) {

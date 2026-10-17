@@ -1,6 +1,6 @@
 // Mirrors functions/api/lib/rules.js; the server is the source of truth and rejects anything else.
 export const CATEGORIES = ['Books', 'Calculators & Electronics', 'Lab Supplies', 'Stationery', 'Hostel Essentials', 'Other']
-export const CONDITIONS = ['New', 'Like New', 'Good', 'Fair']
+export const CONDITIONS = ['New', 'Once used', 'Used more than once']
 export const LISTING_TYPES = [
   { value: 'sell', label: 'For sale' },
   { value: 'swap', label: 'Swap' },

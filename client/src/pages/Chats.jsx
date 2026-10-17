@@ -256,6 +256,12 @@ function AcceptDialog({ inquiry, open, onOpenChange, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
+  // Prefill from the saved profile so a seller doesn't retype it; one fetch per dialog open.
+  useEffect(() => {
+    if (!open) return
+    api('/me/profile').then((p) => p.phone && setPhone((cur) => cur || p.phone)).catch(() => {})
+  }, [open])
+
   async function submit(e) {
     e.preventDefault()
     if (share === 'phone' && !PHONE_RE.test(cleanPhone(phone))) {
