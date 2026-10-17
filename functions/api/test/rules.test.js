@@ -78,6 +78,7 @@ test('searchListings filters, hides Completed by default and sorts deterministic
   assert.deepEqual(r.searchListings(rows, {}).map((l) => l.ROWID), ['2', '1']);
   assert.deepEqual(r.searchListings(rows, { q: 'TEXTBOOK  physics' }).map((l) => l.ROWID), ['1']);
   assert.deepEqual(r.searchListings(rows, { status: 'Completed' }).map((l) => l.ROWID), ['3']);
+  assert.deepEqual(r.searchListings(rows, { status: 'all' }).map((l) => l.ROWID), ['3', '2', '1']);
   assert.deepEqual(r.searchListings(rows, { category: 'Books' }).map((l) => l.ROWID), ['1']);
   assert.deepEqual(r.searchListings(rows, { sort: 'price_desc' }).map((l) => l.ROWID), ['1', '2']);
   assert.deepEqual(r.searchListings(rows, { sort: 'oldest' }).map((l) => l.ROWID), ['1', '2']);

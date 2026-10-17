@@ -103,7 +103,8 @@ route('POST', '/signup', async ({ body, admin }) => {
   if (!firstName) throw new ValidationError('First name is required');
   try {
     await admin.userManagement().registerUser(
-      { platform_type: 'web', zaid: env('AUTH_ZAID') },
+      // Without redirect_url Catalyst sends users to the project's bare domain, which hosts nothing.
+      { platform_type: 'web', zaid: env('AUTH_ZAID'), redirect_url: `${env('APP_URL').replace(/\/$/, '')}/login?tab=signin` },
       { email_id: email, first_name: firstName, last_name: lastName },
     );
   } catch (err) {

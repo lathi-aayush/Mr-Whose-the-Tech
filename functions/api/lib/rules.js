@@ -130,10 +130,12 @@ function assertOwnerTransition(from, to) {
 function searchListings(listings, params = {}) {
   const terms = String(params.q || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
   const status = params.status && STATUSES.includes(params.status) ? params.status : null;
+  // "all" includes Completed; the browse page fetches everything once and filters in the browser.
+  const includeAll = params.status === 'all';
   const sort = SORTS.includes(params.sort) ? params.sort : 'newest';
 
   const filtered = listings.filter((l) => {
-    if (status ? l.status !== status : l.status === 'Completed') return false;
+    if (status ? l.status !== status : !includeAll && l.status === 'Completed') return false;
     if (params.category && l.category !== params.category) return false;
     if (params.condition && l.item_condition !== params.condition) return false;
     if (params.type && l.listing_type !== params.type) return false;

@@ -28,9 +28,15 @@ export function formatPrice(listing) {
   return `₹${Number(listing.price).toLocaleString('en-IN')}`
 }
 
+export const STATUSES = ['Available', 'Reserved', 'Completed']
+
+// Catalyst timestamps look like "2026-10-17 10:00:00:123"; make them ISO-parseable.
+export function parseCatalystTime(catalystTime) {
+  return Date.parse(String(catalystTime).replace(' ', 'T').replace(/:(\d{3})$/, '.$1')) || 0
+}
+
 export function timeAgo(catalystTime) {
-  // Catalyst timestamps look like "2026-10-17 10:00:00:123".
-  const t = Date.parse(String(catalystTime).replace(' ', 'T').replace(/:(\d{3})$/, '.$1'))
+  const t = parseCatalystTime(catalystTime)
   if (!t) return ''
   const mins = Math.round((Date.now() - t) / 60000)
   if (mins < 1) return 'just now'

@@ -63,7 +63,7 @@ catalyst serve            # API on http://localhost:3000/server/api
 cd client && npm run dev  # frontend on http://localhost:5173
 ```
 
-The function needs `ALLOWED_EMAIL_DOMAINS`, `AUTH_ZAID`, `STRATUS_BUCKET`, and `STRATUS_PUBLIC_BASE` in `functions/api/catalyst-config.json`.
+The function needs `ALLOWED_EMAIL_DOMAINS`, `APP_URL` (where sign-up emails return users), `AUTH_ZAID`, `STRATUS_BUCKET`, and `STRATUS_PUBLIC_BASE` in `functions/api/catalyst-config.json`.
 
 ## Team
 

@@ -1,6 +1,9 @@
+import { SearchXIcon } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Layout } from './components/Layout'
-import { Skeleton, primaryButton } from './components/ui'
+import { Button } from './components/ui/button'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './components/ui/empty'
+import { Skeleton } from './components/ui/skeleton'
 import { useAuth } from './lib/auth'
 import Browse from './pages/Browse'
 import Dashboard from './pages/Dashboard'
@@ -19,10 +22,16 @@ function RequireAuth({ children }) {
 
 function NotFound() {
   return (
-    <div className="flex min-h-64 flex-col items-center justify-center text-center">
-      <p className="text-lg font-semibold text-ink-900">Page not found</p>
-      <Link to="/" className={`${primaryButton} mt-4`}>Back to listings</Link>
-    </div>
+    <Empty className="min-h-80">
+      <EmptyHeader>
+        <EmptyMedia variant="icon"><SearchXIcon /></EmptyMedia>
+        <EmptyTitle>Page not found</EmptyTitle>
+        <EmptyDescription>The link may be old or the listing was removed.</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button asChild><Link to="/">Back to listings</Link></Button>
+      </EmptyContent>
+    </Empty>
   )
 }
 

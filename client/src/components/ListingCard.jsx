@@ -1,59 +1,62 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { formatPrice, timeAgo } from '../lib/constants'
-import { CategoryArt, Skeleton, StatusBadge } from './ui'
+import { cn } from 'cn'
+import { Card } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { formatPrice, timeAgo } from '@/lib/constants'
+import { CategoryArt, StatusBadge } from './common'
 
+// Price-first card, the order OLX and Marketplace users scan in.
 export function ListingCard({ listing }) {
   const [imgFailed, setImgFailed] = useState(false)
   const cover = listing.image_urls?.[0]
+  const gone = listing.status === 'Completed'
 
   return (
-    <Link
-      to={`/listings/${listing.ROWID}`}
-      className="fade-in group flex flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand-600"
-    >
-      <div className="relative aspect-[4/3] overflow-hidden">
+    <Card className="fade-in group relative gap-0 overflow-hidden py-0 transition hover:-translate-y-0.5 hover:shadow-lg has-[a:focus-visible]:ring-3 has-[a:focus-visible]:ring-ring/50">
+      <div className="relative aspect-[4/3] overflow-hidden bg-muted">
         {cover && !imgFailed ? (
-          <img src={cover} alt={listing.title} loading="lazy" onError={() => setImgFailed(true)} className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
+          <img
+            src={cover}
+            alt=""
+            loading="lazy"
+            onError={() => setImgFailed(true)}
+            className={cn('size-full object-cover transition duration-300 group-hover:scale-[1.03]', gone && 'grayscale')}
+          />
         ) : (
-          <CategoryArt category={listing.category} className="h-full w-full" />
+          <CategoryArt category={listing.category} className="size-full" />
         )}
-        <div className="absolute left-2 top-2">
-          <StatusBadge status={listing.status} />
-        </div>
-        {listing.spin_url && (
-          <span className="absolute right-2 top-2 rounded-full bg-stone-900/80 px-2 py-0.5 text-xs font-medium text-white">360°</span>
-        )}
+        {listing.status !== 'Available' && <StatusBadge status={listing.status} className="absolute left-2 top-2 z-10" />}
       </div>
-      <div className="flex flex-1 flex-col gap-1 p-3">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="line-clamp-1 font-medium text-ink-900" title={listing.title}>{listing.title}</h3>
-          <span className="shrink-0 font-semibold text-brand-700">{formatPrice(listing)}</span>
-        </div>
-        <p className="text-xs text-stone-500">
-          {listing.item_condition} · {listing.category}
-        </p>
-        <p className="mt-auto pt-2 text-xs text-stone-400">
-          {listing.seller_name} · {timeAgo(listing.CREATEDTIME)}
+      <div className="flex flex-1 flex-col p-3">
+        <p className={cn('text-lg font-bold leading-tight', listing.listing_type !== 'sell' && 'text-brand-700')}>{formatPrice(listing)}</p>
+        <h3 className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground" title={listing.title}>
+          {/* Stretched link: the whole card is clickable, the badge tooltip still works. */}
+          <Link to={`/listings/${listing.ROWID}`} className="outline-none after:absolute after:inset-0">{listing.title}</Link>
+        </h3>
+        <p className="mt-auto flex items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
+          <span className="truncate">{listing.item_condition}</span>
+          <span className="shrink-0">{timeAgo(listing.CREATEDTIME)}</span>
         </p>
       </div>
-    </Link>
+    </Card>
   )
 }
 
 // Same geometry as ListingCard so nothing shifts when data arrives.
 export function ListingCardSkeleton() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
+    <Card className="gap-0 overflow-hidden py-0">
       <Skeleton className="aspect-[4/3] rounded-none" />
-      <div className="flex flex-1 flex-col gap-1 p-3">
-        <div className="flex justify-between gap-2">
-          <Skeleton className="h-6 w-2/3" />
-          <Skeleton className="h-6 w-12" />
+      <div className="flex flex-1 flex-col p-3">
+        <Skeleton className="h-[22px] w-16" />
+        <Skeleton className="mt-1 h-4 w-full" />
+        <Skeleton className="mt-1 h-4 w-2/3" />
+        <div className="mt-auto flex justify-between pt-2">
+          <Skeleton className="h-4 w-14" />
+          <Skeleton className="h-4 w-10" />
         </div>
-        <Skeleton className="h-4 w-1/2" />
-        <Skeleton className="mt-2 h-4 w-1/3" />
       </div>
-    </div>
+    </Card>
   )
 }

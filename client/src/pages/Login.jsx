@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react'
+import { InfoIcon, MailCheckIcon } from 'lucide-react'
 import { Navigate, useSearchParams } from 'react-router-dom'
-import { Field, Skeleton, inputClass, primaryButton } from '../components/ui'
-import { api } from '../lib/api'
-import { useAuth } from '../lib/auth'
-import { mountSignIn, safeNext } from '../lib/catalyst'
-import { CAMPUS_DOMAIN, DEMO_OPEN_SIGNUP } from '../lib/constants'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
+import { mountSignIn, safeNext } from '@/lib/catalyst'
+import { CAMPUS_DOMAIN, DEMO_OPEN_SIGNUP } from '@/lib/constants'
 
 export default function Login() {
   const [params, setParams] = useSearchParams()
@@ -21,34 +29,41 @@ export default function Login() {
   if (checked && user) return <Navigate to={next} replace />
 
   const setTab = (t) => setParams((p) => { const n = new URLSearchParams(p); n.set('tab', t); return n }, { replace: true })
-  const tabClass = (t) =>
-    `flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${tab === t ? 'bg-white text-ink-900 shadow-sm' : 'text-stone-600 hover:text-stone-900'}`
 
   return (
-    <div className="mx-auto max-w-md">
-      <h1 className="text-2xl font-semibold tracking-tight text-ink-900">Welcome to Campus Sibling</h1>
-      {DEMO_OPEN_SIGNUP ? (
-        <p className="mt-2 rounded-lg border border-accent-500/20 bg-accent-50 p-3 text-sm text-accent-700">
-          Built for one campus: in production only <strong>@{CAMPUS_DOMAIN}</strong> emails can join. For the hackathon demo, sign-up is open to any email.
-        </p>
-      ) : (
-        <p className="mt-1 text-stone-600">Only students with an <strong>@{CAMPUS_DOMAIN}</strong> email can join.</p>
+    <div className="mx-auto flex max-w-md flex-col gap-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Welcome to Campus Sibling</h1>
+        {!DEMO_OPEN_SIGNUP && <p className="mt-1 text-muted-foreground">Only students with an <strong>@{CAMPUS_DOMAIN}</strong> email can join.</p>}
+      </div>
+      {DEMO_OPEN_SIGNUP && (
+        <Alert className="border-grape-500/25 bg-grape-50 text-grape-700">
+          <InfoIcon />
+          <AlertTitle>Demo mode</AlertTitle>
+          <AlertDescription className="text-grape-700/90">
+            Built for one campus: in production only @{CAMPUS_DOMAIN} emails can join. For the hackathon demo, sign-up is open to any email.
+          </AlertDescription>
+        </Alert>
       )}
 
-      <div role="tablist" aria-label="Account" className="mt-6 flex gap-1 rounded-xl bg-stone-100 p-1">
-        <button type="button" role="tab" aria-selected={tab === 'signin'} className={tabClass('signin')} onClick={() => setTab('signin')}>Sign in</button>
-        <button type="button" role="tab" aria-selected={tab === 'signup'} className={tabClass('signup')} onClick={() => setTab('signup')}>Create account</button>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4">
-        {!checked ? (
-          <Skeleton className="h-[500px] w-full" />
-        ) : tab === 'signin' ? (
-          <SignIn next={next} />
-        ) : (
-          <SignUp onDone={() => setTab('signin')} />
-        )}
-      </div>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="w-full">
+          <TabsTrigger value="signin">Sign in</TabsTrigger>
+          <TabsTrigger value="signup">Create account</TabsTrigger>
+        </TabsList>
+        <Card className="mt-2">
+          <CardContent>
+            {!checked ? (
+              <Skeleton className="h-[500px] w-full" />
+            ) : (
+              <>
+                <TabsContent value="signin"><SignIn next={next} /></TabsContent>
+                <TabsContent value="signup"><SignUp onDone={() => setTab('signin')} /></TabsContent>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </Tabs>
     </div>
   )
 }
@@ -60,7 +75,14 @@ function SignIn({ next }) {
     mountSignIn('login-container', next).catch((e) => setError(e.message))
   }, [next])
 
-  if (error) return <p role="alert" className="text-sm text-rose-700">{error}. Refresh the page to try again.</p>
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Sign-in box failed to load</AlertTitle>
+        <AlertDescription>{error}. Refresh the page to try again.</AlertDescription>
+      </Alert>
+    )
+  }
   return <div id="login-container" className="min-h-[500px]" />
 }
 
@@ -82,31 +104,49 @@ function SignUp({ onDone }) {
 
   if (status.message) {
     return (
-      <div className="fade-in space-y-3 text-sm text-stone-700">
-        <p className="rounded-lg bg-brand-50 p-3 font-medium text-brand-900">{status.message}</p>
-        <p>Open the email from Catalyst, set your password, then come back and sign in.</p>
-        <button type="button" onClick={onDone} className={primaryButton}>Go to sign in</button>
+      <div className="fade-in flex flex-col gap-4">
+        <CardHeader className="px-0">
+          <MailCheckIcon className="size-8 text-brand-700" aria-hidden="true" />
+          <CardTitle>{status.message}</CardTitle>
+          <CardDescription>Open the email from Catalyst, set your password, then come back and sign in.</CardDescription>
+        </CardHeader>
+        <Button onClick={onDone}>Go to sign in</Button>
       </div>
     )
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="First name">
-          <input required maxLength={50} value={form.first_name} onChange={set('first_name')} className={inputClass} autoComplete="given-name" />
+    <form onSubmit={submit}>
+      <FieldGroup>
+        <div className="grid grid-cols-2 gap-3">
+          <Field>
+            <FieldLabel htmlFor="first_name">First name</FieldLabel>
+            <Input id="first_name" required maxLength={50} value={form.first_name} onChange={set('first_name')} autoComplete="given-name" />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="last_name">Last name</FieldLabel>
+            <Input id="last_name" maxLength={50} value={form.last_name} onChange={set('last_name')} autoComplete="family-name" />
+          </Field>
+        </div>
+        <Field data-invalid={!!status.error || undefined}>
+          <FieldLabel htmlFor="email">{DEMO_OPEN_SIGNUP ? 'Email' : 'Campus email'}</FieldLabel>
+          <Input
+            id="email"
+            required
+            type="email"
+            value={form.email}
+            onChange={set('email')}
+            aria-invalid={!!status.error || undefined}
+            placeholder={DEMO_OPEN_SIGNUP ? 'you@example.com' : `you@${CAMPUS_DOMAIN}`}
+            autoComplete="email"
+          />
+          {status.error ? <FieldError>{status.error}</FieldError> : <FieldDescription>We'll send a link to set your password.</FieldDescription>}
         </Field>
-        <Field label="Last name">
-          <input maxLength={50} value={form.last_name} onChange={set('last_name')} className={inputClass} autoComplete="family-name" />
-        </Field>
-      </div>
-      <Field label={DEMO_OPEN_SIGNUP ? 'Email' : 'Campus email'} hint="We'll send a link to set your password.">
-        <input required type="email" value={form.email} onChange={set('email')} className={inputClass} placeholder={DEMO_OPEN_SIGNUP ? 'you@example.com' : `you@${CAMPUS_DOMAIN}`} autoComplete="email" />
-      </Field>
-      {status.error && <p role="alert" className="text-sm text-rose-700">{status.error}</p>}
-      <button type="submit" disabled={status.busy} className={`${primaryButton} w-full`}>
-        {status.busy ? 'Creating account…' : 'Create account'}
-      </button>
+        <Button type="submit" size="lg" disabled={status.busy} className="w-full">
+          {status.busy && <Spinner data-icon="inline-start" />}
+          {status.busy ? 'Creating account…' : 'Create account'}
+        </Button>
+      </FieldGroup>
     </form>
   )
 }
