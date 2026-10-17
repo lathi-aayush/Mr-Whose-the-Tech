@@ -4,7 +4,7 @@ import { Field, Skeleton, inputClass, primaryButton } from '../components/ui'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { mountSignIn, safeNext } from '../lib/catalyst'
-import { CAMPUS_DOMAIN } from '../lib/constants'
+import { CAMPUS_DOMAIN, DEMO_OPEN_SIGNUP } from '../lib/constants'
 
 export default function Login() {
   const [params, setParams] = useSearchParams()
@@ -27,7 +27,13 @@ export default function Login() {
   return (
     <div className="mx-auto max-w-md">
       <h1 className="text-2xl font-semibold tracking-tight text-ink-900">Welcome to Campus Sibling</h1>
-      <p className="mt-1 text-stone-600">Only students with an <strong>@{CAMPUS_DOMAIN}</strong> email can join.</p>
+      {DEMO_OPEN_SIGNUP ? (
+        <p className="mt-2 rounded-lg border border-accent-500/20 bg-accent-50 p-3 text-sm text-accent-700">
+          Built for one campus: in production only <strong>@{CAMPUS_DOMAIN}</strong> emails can join. For the hackathon demo, sign-up is open to any email.
+        </p>
+      ) : (
+        <p className="mt-1 text-stone-600">Only students with an <strong>@{CAMPUS_DOMAIN}</strong> email can join.</p>
+      )}
 
       <div role="tablist" aria-label="Account" className="mt-6 flex gap-1 rounded-xl bg-stone-100 p-1">
         <button type="button" role="tab" aria-selected={tab === 'signin'} className={tabClass('signin')} onClick={() => setTab('signin')}>Sign in</button>
@@ -94,8 +100,8 @@ function SignUp({ onDone }) {
           <input maxLength={50} value={form.last_name} onChange={set('last_name')} className={inputClass} autoComplete="family-name" />
         </Field>
       </div>
-      <Field label="Campus email" hint="We'll send a link to set your password.">
-        <input required type="email" value={form.email} onChange={set('email')} className={inputClass} placeholder={`you@${CAMPUS_DOMAIN}`} autoComplete="email" />
+      <Field label={DEMO_OPEN_SIGNUP ? 'Email' : 'Campus email'} hint="We'll send a link to set your password.">
+        <input required type="email" value={form.email} onChange={set('email')} className={inputClass} placeholder={DEMO_OPEN_SIGNUP ? 'you@example.com' : `you@${CAMPUS_DOMAIN}`} autoComplete="email" />
       </Field>
       {status.error && <p role="alert" className="text-sm text-rose-700">{status.error}</p>}
       <button type="submit" disabled={status.busy} className={`${primaryButton} w-full`}>

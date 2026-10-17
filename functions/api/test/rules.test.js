@@ -23,6 +23,9 @@ test('isAllowedEmail matches the exact domain only', () => {
   assert.equal(r.isAllowedEmail('x@gmail.com', allowed), false);
   assert.equal(r.isAllowedEmail('not-an-email', allowed), false);
   assert.equal(r.isAllowedEmail(undefined, allowed), false);
+  // Demo mode still rejects malformed input.
+  assert.equal(r.isAllowedEmail('judge@gmail.com', r.parseAllowedDomains('*')), true);
+  assert.equal(r.isAllowedEmail('not-an-email', r.parseAllowedDomains('*')), false);
 });
 
 test('validateListingInput accepts a valid sell listing', () => {

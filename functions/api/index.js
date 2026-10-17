@@ -94,7 +94,9 @@ route('POST', '/signup', async ({ body, admin }) => {
   const email = String(body.email || '').trim().toLowerCase();
   const allowed = rules.parseAllowedDomains(env('ALLOWED_EMAIL_DOMAINS'));
   if (!rules.isAllowedEmail(email, allowed)) {
-    throw new ValidationError(`Use your campus email (${allowed.map((d) => '@' + d).join(', ')})`);
+    throw new ValidationError(
+      allowed.includes('*') ? 'Enter a valid email address' : `Use your campus email (${allowed.map((d) => '@' + d).join(', ')})`,
+    );
   }
   const firstName = String(body.first_name || '').trim().slice(0, 50);
   const lastName = String(body.last_name || '').trim().slice(0, 50);

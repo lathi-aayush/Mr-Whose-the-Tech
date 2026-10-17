@@ -13,8 +13,9 @@ export const SORTS = [
   { value: 'price_desc', label: 'Price: high to low' },
 ]
 export const MAX_IMAGES = 5
-// Display hint only; the function's ALLOWED_EMAIL_DOMAINS env var is what's enforced.
+// Display only; the function's ALLOWED_EMAIL_DOMAINS env var is what's enforced. Keep DEMO_OPEN_SIGNUP in sync with it ("*").
 export const CAMPUS_DOMAIN = 'vit.edu'
+export const DEMO_OPEN_SIGNUP = true
 export const OFFER_LABELS = { sell: 'Wants to buy', swap: 'Wants to swap', free: 'Wants it free' }
 
 export function typeLabel(value) {

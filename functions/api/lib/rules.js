@@ -37,6 +37,8 @@ function isAllowedEmail(email, allowedDomains) {
   if (typeof email !== 'string') return false;
   const normalized = email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return false;
+  // "*" opens sign-up to any address (hackathon demo, so judges can try it). Set a domain to lock it to one campus.
+  if (allowedDomains.includes('*')) return true;
   const domain = normalized.slice(normalized.lastIndexOf('@') + 1);
   return allowedDomains.includes(domain);
 }
